@@ -1,0 +1,139 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Record Game</h2>
+  {% if players|length < 2 %}
+    <p>Add at least 2 players first.</p>
+  {% else %}
+  <form method="post" class="form-grid">
+    <label for="played_on">Date</label>
+    <input id="played_on" name="played_on" type="date" value="{{ today_iso }}" required>
+
+    <label for="winner_id">Winner</label>
+    <select id="winner_id" name="winner_id" required>
+      {% for p in players %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="loser_id">Opponent</label>
+    <select id="loser_id" name="loser_id" required>
+      {% for p in players %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="loser_score">Opponent Score</label>
+    <input id="loser_score" name="loser_score" type="number" min="0" max="120" required>
+
+    <label for="first_crib_id">First Crib</label>
+    <select id="first_crib_id" name="first_crib_id" required>
+      {% for p in players %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="notes">Notes</label>
+    <input id="notes" name="notes" type="text" maxlength="255" placeholder="Optional">
+
+    <button type="submit">Save Game (Winner fixed at 121)</button>
+  </form>
+  <script>
+    (function () {
+      const winnerSelect = document.getElementById("winner_id");
+      const loserSelect = document.getElementById("loser_id");
+      const firstCribSelect = document.getElementById("first_crib_id");
+
+      function syncPlayerSelects() {
+        const winnerValue = winnerSelect.value;
+        const loserValue = loserSelect.value;
+
+        for (const option of loserSelect.options) {
+          option.hidden = option.value === winnerValue;
+          option.disabled = option.value === winnerValue;
+        }
+
+        for (const option of winnerSelect.options) {
+          option.hidden = option.value === loserValue;
+          option.disabled = option.value === loserValue;
+        }
+
+        if (loserSelect.value === winnerSelect.value) {
+          const fallback = Array.from(loserSelect.options).find((opt) => !opt.disabled);
+          if (fallback) {
+            loserSelect.value = fallback.value;
+          }
+        }
+
+        if (winnerSelect.value === loserSelect.value) {
+          const fallback = Array.from(winnerSelect.options).find((opt) => !opt.disabled);
+          if (fallback) {
+            winnerSelect.value = fallback.value;
+          }
+        }
+
+        const allowedFirstCrib = new Set([winnerSelect.value, loserSelect.value]);
+        for (const option of firstCribSelect.options) {
+          const allowed = allowedFirstCrib.has(option.value);
+          option.hidden = !allowed;
+          option.disabled = !allowed;
+        }
+
+        if (!allowedFirstCrib.has(firstCribSelect.value)) {
+          const fallback = Array.from(firstCribSelect.options).find((opt) => !opt.disabled);
+          if (fallback) {
+            firstCribSelect.value = fallback.value;
+          }
+        }
+      }
+
+      winnerSelect.addEventListener("change", syncPlayerSelects);
+      loserSelect.addEventListener("change", syncPlayerSelects);
+      syncPlayerSelects();
+    })();
+  </script>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h3>Recent Games</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Winner</th>
+        <th>Loser</th>
+        <th>Score</th>
+        <th>First Crib</th>
+        <th>Result</th>
+        <th>Point Diff</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for game in recent_games %}
+      <tr>
+        <td>{{ game.played_on }}</td>
+        <td>{{ game.winner.name if game.winner else "N/A" }}</td>
+        <td>{{ game.player2.name if game.winner_id == game.player1_id else game.player1.name }}</td>
+        <td>{{ game.winner_score }} - {{ game.loser_score }}</td>
+        <td>{{ game.first_crib.name if game.first_crib else "N/A" }}</td>
+        <td>
+          {% if game.is_double_skunk %}
+            Double skunk
+          {% elif game.is_skunk %}
+            Skunk
+          {% else %}
+            Standard
+          {% endif %}
+        </td>
+        <td>{{ game.point_diff }}</td>
+        <td>{{ game.notes or "" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No games yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

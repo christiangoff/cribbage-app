@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel">
+  <h2>{{ year }} Leaderboard</h2>
+  <form method="get" class="inline-form">
+    <label for="year">Year</label>
+    <input id="year" name="year" type="number" min="2000" max="2100" value="{{ year }}">
+    <button type="submit">View</button>
+  </form>
+
+  {% if winner %}
+    <p class="winner">Model winner: <strong>{{ winner.player.name }}</strong> ({{ "%.2f"|format(winner.champion_score) }})</p>
+  {% else %}
+    <p>No games recorded for {{ year }}.</p>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Player</th>
+        <th>Champion Score</th>
+        <th>Games</th>
+        <th>W-L-D</th>
+        <th>First Cribs</th>
+        <th>Skunks</th>
+        <th>Double Skunks</th>
+        <th>Win %</th>
+        <th>Avg Margin</th>
+        <th>Point Diff</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in ranked %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ row.player.name }}</td>
+        <td>{{ "%.2f"|format(row.champion_score) }}</td>
+        <td>{{ row.games }}</td>
+        <td>{{ row.wins }}-{{ row.losses }}-{{ row.draws }}</td>
+        <td>{{ row.first_cribs }}</td>
+        <td>{{ row.skunks }}</td>
+        <td>{{ row.double_skunks }}</td>
+        <td>{{ "%.1f"|format(row.win_rate * 100) }}%</td>
+        <td>{{ "%.2f"|format(row.avg_margin) }}</td>
+        <td>{{ row.point_diff }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11">No players or games found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel small-text">
+  <h3>How the model works</h3>
+  <p>
+    Champion Score = 60% win rate + 25% normalized average scoring margin + 15% participation.
+    Skunks, double skunks, and first crib are tracked and shown for context.
+  </p>
+</section>
+{% endblock %}

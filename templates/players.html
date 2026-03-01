@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Players</h2>
+  <p>Player management is admin-only. Anyone can still record games from the Games page.</p>
+</section>
+
+<section class="panel">
+  <h3>Current Players</h3>
+  <ul>
+    {% for player in players %}
+      <li>{{ player.name }}</li>
+    {% else %}
+      <li>No players added yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

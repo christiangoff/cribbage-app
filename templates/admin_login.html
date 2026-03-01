@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Admin Login</h2>
+  <form method="post" class="form-grid narrow-form">
+    <label for="password">Admin Password</label>
+    <input id="password" name="password" type="password" required>
+    <button type="submit">Login</button>
+  </form>
+</section>
+{% endblock %}

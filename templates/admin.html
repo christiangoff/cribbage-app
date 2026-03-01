@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Admin</h2>
+  <p>Manage players and remove bad game entries.</p>
+</section>
+
+<section class="panel">
+  <h3>Add Player</h3>
+  <form method="post" action="{{ url_for('admin_add_player') }}" class="form-grid narrow-form">
+    <label for="name">Player name</label>
+    <input id="name" name="name" type="text" maxlength="80" required>
+    <button type="submit">Add Player</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>Remove Player</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Player</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for player in players %}
+      <tr>
+        <td>{{ player.name }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin_delete_player', player_id=player.id) }}" onsubmit="return confirm('Delete player {{ player.name }}?');">
+            <button type="submit" class="danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No players found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h3>Delete Games</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Winner</th>
+        <th>Score</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for game in recent_games %}
+      <tr>
+        <td>{{ game.played_on }}</td>
+        <td>{{ game.winner.name if game.winner else "N/A" }}</td>
+        <td>{{ game.winner_score }} - {{ game.loser_score }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin_delete_game', game_id=game.id) }}" onsubmit="return confirm('Delete game #{{ game.id }}?');">
+            <button type="submit" class="danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No games found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

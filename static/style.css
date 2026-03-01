@@ -1,0 +1,155 @@
+:root {
+  --bg: #f5f1e8;
+  --ink: #212121;
+  --panel: #fffdf7;
+  --line: #d7c8a1;
+  --accent: #244b5a;
+  --ok: #3b7d3d;
+  --err: #8f2d2d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Georgia", serif;
+  color: var(--ink);
+  background: linear-gradient(180deg, #f7f3ea 0%, #efe5d2 100%);
+}
+
+header {
+  background: var(--accent);
+  color: white;
+  padding: 1rem;
+}
+
+header h1 {
+  margin: 0 0 0.5rem 0;
+}
+
+nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+nav a {
+  color: white;
+  text-decoration: none;
+}
+
+main {
+  max-width: 980px;
+  margin: 1rem auto;
+  padding: 0 1rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.inline-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0 1rem;
+}
+
+input,
+select,
+button {
+  padding: 0.45rem;
+  border: 1px solid #b8a57a;
+  border-radius: 4px;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+button.danger {
+  background: #8f2d2d;
+}
+
+.inline-nav-form {
+  margin: 0;
+}
+
+.link-button {
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.narrow-form {
+  max-width: 460px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border: 1px solid var(--line);
+  padding: 0.4rem;
+  text-align: left;
+}
+
+.alerts {
+  list-style: none;
+  padding: 0;
+}
+
+.alert {
+  padding: 0.5rem;
+  margin-bottom: 0.4rem;
+  border-radius: 4px;
+}
+
+.alert.success {
+  background: #dff4df;
+  color: var(--ok);
+}
+
+.alert.error {
+  background: #f8dcdc;
+  color: var(--err);
+}
+
+.winner {
+  font-size: 1.1rem;
+  color: #163f20;
+}
+
+.small-text {
+  font-size: 0.95rem;
+}
+
+@media (min-width: 700px) {
+  .form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .form-grid button {
+    grid-column: span 2;
+  }
+}

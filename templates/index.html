@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel">
+  <h2>{{ current_year }} Champion Forecast</h2>
+  {% if winner %}
+    <p class="winner">Current projected winner: <strong>{{ winner.player.name }}</strong> ({{ "%.2f"|format(winner.champion_score) }})</p>
+  {% else %}
+    <p>No games recorded for {{ current_year }} yet.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h3>Top 5 Leaderboard</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Player</th>
+        <th>Score</th>
+        <th>W-L-D</th>
+        <th>Skunks</th>
+        <th>Double Skunks</th>
+        <th>Point Diff</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in ranked %}
+      <tr>
+        <td>{{ row.player.name }}</td>
+        <td>{{ "%.2f"|format(row.champion_score) }}</td>
+        <td>{{ row.wins }}-{{ row.losses }}-{{ row.draws }}</td>
+        <td>{{ row.skunks }}</td>
+        <td>{{ row.double_skunks }}</td>
+        <td>{{ row.point_diff }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h3>Recent Games</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Winner</th>
+        <th>Loser</th>
+        <th>Score</th>
+        <th>First Crib</th>
+        <th>Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for game in recent_games %}
+      <tr>
+        <td>{{ game.played_on }}</td>
+        <td>{{ game.winner.name if game.winner else "N/A" }}</td>
+        <td>{{ game.player2.name if game.winner_id == game.player1_id else game.player1.name }}</td>
+        <td>{{ game.winner_score }} - {{ game.loser_score }}</td>
+        <td>{{ game.first_crib.name if game.first_crib else "N/A" }}</td>
+        <td>
+          {% if game.is_double_skunk %}
+            Double skunk
+          {% elif game.is_skunk %}
+            Skunk
+          {% else %}
+            Standard
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No games yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
