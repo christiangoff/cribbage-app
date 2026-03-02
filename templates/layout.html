@@ -13,6 +13,7 @@
       <a href="{{ url_for('index') }}">Home</a>
       <a href="{{ url_for('games') }}">Games</a>
       <a href="{{ url_for('leaderboard') }}">Leaderboard</a>
+      <a href="{{ url_for('stats') }}">Stats</a>
       {% if is_admin %}
         <a href="{{ url_for('admin_panel') }}">Admin</a>
         <form method="post" action="{{ url_for('admin_logout') }}" class="inline-nav-form">

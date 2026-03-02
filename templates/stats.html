@@ -1,0 +1,265 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<section class="panel">
+  <h2>{{ year }} Stats</h2>
+  <form method="get" class="inline-form">
+    <label for="year">Year</label>
+    <input id="year" name="year" type="number" min="2000" max="2100" value="{{ year }}">
+    <button type="submit">View</button>
+  </form>
+</section>
+
+{% if total_games == 0 %}
+<section class="panel">
+  <p>No games recorded for {{ year }} yet. <a href="{{ url_for('games') }}">Record a game</a> to see stats.</p>
+</section>
+{% else %}
+
+{# ── Fun Fact Cards ─────────────────────────────────────────────────── #}
+<div class="stat-cards">
+  <div class="stat-card">
+    <div class="stat-number">{{ total_games }}</div>
+    <div class="stat-label">Games Played</div>
+  </div>
+
+  {% if champion_leader %}
+  <div class="stat-card stat-card--accent">
+    <div class="stat-number">{{ champion_leader.player.name }}</div>
+    <div class="stat-label">Current Leader ({{ "%.1f"|format(champion_leader.champion_score) }})</div>
+  </div>
+  {% endif %}
+
+  {% if most_active_name %}
+  <div class="stat-card">
+    <div class="stat-number">{{ most_active_name }}</div>
+    <div class="stat-label">Most Active &mdash; {{ most_active_count }} games</div>
+  </div>
+  {% endif %}
+
+  {% if first_crib_pct is not none %}
+  <div class="stat-card">
+    <div class="stat-number">{{ first_crib_pct }}%</div>
+    <div class="stat-label">First Crib Win Rate</div>
+  </div>
+  {% endif %}
+
+  {% if best_streak %}
+  <div class="stat-card stat-card--streak">
+    <div class="stat-number">{{ best_streak[1] }}-game streak</div>
+    <div class="stat-label">{{ best_streak[0] }} on a roll</div>
+  </div>
+  {% endif %}
+
+  {% if top_skunk %}
+  <div class="stat-card">
+    <div class="stat-number">{{ top_skunk[1] }} skunks</div>
+    <div class="stat-label">{{ top_skunk[0] }} most dominant</div>
+  </div>
+  {% endif %}
+
+  {% if biggest_win %}
+  <div class="stat-card">
+    <div class="stat-number">{{ biggest_win.point_diff }}-pt win</div>
+    <div class="stat-label">Biggest blowout{% if biggest_win.winner %} by {{ biggest_win.winner.name }}{% endif %}</div>
+  </div>
+  {% endif %}
+
+  {% if closest_game %}
+  <div class="stat-card">
+    <div class="stat-number">121&ndash;{{ closest_game.loser_score }}</div>
+    <div class="stat-label">Closest finish</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Champion Score Race ────────────────────────────────────────────── #}
+{% if champion_dates %}
+<section class="panel">
+  <h3>Champion Score Race</h3>
+  <p class="small-text">How each player's champion score has evolved as games are played throughout the year.</p>
+  <div class="chart-container chart-container--tall">
+    <canvas id="raceChart"></canvas>
+  </div>
+</section>
+{% endif %}
+
+{# ── Activity + Win Quality ─────────────────────────────────────────── #}
+<div class="chart-grid">
+  <section class="panel">
+    <h3>Games per Month</h3>
+    <p class="small-text">Activity trends &mdash; gaps are opportunities to play.</p>
+    <div class="chart-container">
+      <canvas id="activityChart"></canvas>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>Win Quality</h3>
+    <p class="small-text">Wins broken down by type, plus losses.</p>
+    <div class="chart-container">
+      <canvas id="winQualityChart"></canvas>
+    </div>
+  </section>
+</div>
+
+{# ── Head-to-Head ───────────────────────────────────────────────────── #}
+{% if all_player_names | length > 1 %}
+<section class="panel">
+  <h3>Head-to-Head Records</h3>
+  <p class="small-text">Row player's wins &ndash; losses against each column player. Green = winning record, red = losing record.</p>
+  <div class="h2h-scroll">
+    <table class="h2h-table">
+      <thead>
+        <tr>
+          <th></th>
+          {% for name in all_player_names %}
+          <th>{{ name }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in h2h_table %}
+        <tr>
+          <th>{{ row.player }}</th>
+          {% for cell in row.cells %}
+            {% if cell.self %}
+              <td class="h2h-self">&mdash;</td>
+            {% elif cell.total == 0 %}
+              <td class="h2h-none">&mdash;</td>
+            {% elif cell.wins > cell.losses %}
+              <td class="h2h-win">{{ cell.wins }}&ndash;{{ cell.losses }}</td>
+            {% elif cell.wins < cell.losses %}
+              <td class="h2h-loss">{{ cell.wins }}&ndash;{{ cell.losses }}</td>
+            {% else %}
+              <td class="h2h-even">{{ cell.wins }}&ndash;{{ cell.losses }}</td>
+            {% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% endif %}{# end if total_games #}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const COLORS = ['#244b5a', '#c4742a', '#3b7d3d', '#7b5ea7', '#8f2d2d', '#2a7b8a', '#b5860d', '#555555'];
+  const FONT = 'Georgia, serif';
+
+  Chart.defaults.font.family = FONT;
+  Chart.defaults.color = '#212121';
+
+  // ── Champion Score Race ──────────────────────────────────────────────
+  const raceEl = document.getElementById('raceChart');
+  if (raceEl) {
+    const dates = {{ champion_dates | tojson }};
+    const series = {{ champion_series | tojson }};
+    const names = {{ active_player_names | tojson }};
+
+    new Chart(raceEl, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: names.map((name, i) => ({
+          label: name,
+          data: series[name],
+          borderColor: COLORS[i % COLORS.length],
+          backgroundColor: COLORS[i % COLORS.length] + '18',
+          borderWidth: 2.5,
+          pointRadius: dates.length < 20 ? 4 : 2,
+          tension: 0.35,
+          fill: false,
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Champion Score' },
+            min: 0,
+            grid: { color: '#d7c8a133' },
+          },
+          x: { grid: { color: '#d7c8a133' } }
+        }
+      }
+    });
+  }
+
+  // ── Games per Month ──────────────────────────────────────────────────
+  const activityEl = document.getElementById('activityChart');
+  if (activityEl) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const gpm = {{ games_per_month | tojson }};
+
+    new Chart(activityEl, {
+      type: 'bar',
+      data: {
+        labels: months,
+        datasets: [{
+          label: 'Games',
+          data: gpm,
+          backgroundColor: gpm.map(v => v === 0 ? '#d7c8a155' : '#244b5a'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#d7c8a133' } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  // ── Win Quality ──────────────────────────────────────────────────────
+  const wqEl = document.getElementById('winQualityChart');
+  if (wqEl) {
+    const names = {{ active_player_names | tojson }};
+    const dbl  = {{ win_double_skunks | tojson }};
+    const sk   = {{ win_skunks | tojson }};
+    const std  = {{ win_standard | tojson }};
+    const lost = {{ losses | tojson }};
+
+    new Chart(wqEl, {
+      type: 'bar',
+      data: {
+        labels: names,
+        datasets: [
+          { label: 'Double Skunks', data: dbl, backgroundColor: '#244b5a', borderRadius: 2 },
+          { label: 'Skunks',        data: sk,  backgroundColor: '#2a7b8a', borderRadius: 2 },
+          { label: 'Standard Wins', data: std, backgroundColor: '#3b7d3d', borderRadius: 2 },
+          { label: 'Losses',        data: lost, backgroundColor: '#d7c8a1', borderRadius: 2 },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          x: { stacked: true, grid: { display: false } },
+          y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#d7c8a133' } }
+        }
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

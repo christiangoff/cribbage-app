@@ -319,6 +319,220 @@ def games():
     )
 
 
+def _compute_champion_scores_from_games(
+    players: list[Player], games: list[Game]
+) -> dict[int, float]:
+    """Compute champion scores from an explicit list of games (no DB query)."""
+    if not players or not games:
+        return {p.id: 0.0 for p in players}
+
+    games_by_player: dict[int, list[Game]] = {p.id: [] for p in players}
+    for game in games:
+        if game.player1_id in games_by_player:
+            games_by_player[game.player1_id].append(game)
+        if game.player2_id in games_by_player:
+            games_by_player[game.player2_id].append(game)
+
+    max_games = max((len(g) for g in games_by_player.values()), default=0)
+    if max_games == 0:
+        return {p.id: 0.0 for p in players}
+
+    raw: list[tuple[int, float, float, float, int]] = []
+    for p in players:
+        pg = games_by_player[p.id]
+        wins = losses = 0
+        margins: list[float] = []
+        for g in pg:
+            pf = g.player1_score if g.player1_id == p.id else g.player2_score
+            pa = g.player2_score if g.player1_id == p.id else g.player1_score
+            margins.append(float(pf - pa))
+            if g.winner_id == p.id:
+                wins += 1
+            elif g.winner_id is not None:
+                losses += 1
+        decisive = wins + losses
+        raw.append((
+            p.id,
+            wins / decisive if decisive else 0.0,
+            sum(margins) / len(margins) if margins else 0.0,
+            len(pg) / max_games,
+            len(pg),
+        ))
+
+    active = [(pid, wr, am, part, cnt) for pid, wr, am, part, cnt in raw if cnt > 0]
+    if not active:
+        return {p.id: 0.0 for p in players}
+
+    min_m = min(am for _, _, am, _, _ in active)
+    max_m = max(am for _, _, am, _, _ in active)
+    span = max_m - min_m
+
+    result: dict[int, float] = {}
+    for pid, wr, am, part, cnt in raw:
+        if cnt == 0:
+            result[pid] = 0.0
+        else:
+            mc = (am - min_m) / span if span > 0 else 0.5
+            result[pid] = round(100 * (0.60 * wr + 0.25 * mc + 0.15 * part), 2)
+    return result
+
+
+@app.route("/stats")
+def stats():
+    year = request.args.get("year", type=int) or date.today().year
+    year_games = (
+        Game.query
+        .filter(Game.played_on >= date(year, 1, 1), Game.played_on <= date(year, 12, 31))
+        .order_by(Game.played_on, Game.created_at)
+        .all()
+    )
+    all_players = Player.query.order_by(Player.name.asc()).all()
+    player_map = {p.id: p for p in all_players}
+
+    # ── games per month ────────────────────────────────────────────────
+    games_per_month = [0] * 12
+    for g in year_games:
+        games_per_month[g.played_on.month - 1] += 1
+
+    # ── champion score over time (one snapshot per unique date) ────────
+    unique_dates = sorted(set(g.played_on for g in year_games))
+    champion_dates: list[str] = []
+    champion_series: dict[str, list[float]] = {p.name: [] for p in all_players}
+    for snap_date in unique_dates:
+        subset = [g for g in year_games if g.played_on <= snap_date]
+        scores = _compute_champion_scores_from_games(all_players, subset)
+        champion_dates.append(snap_date.strftime("%b %d"))
+        for p in all_players:
+            champion_series[p.name].append(scores[p.id])
+
+    # ── win quality breakdown ──────────────────────────────────────────
+    standard_wins: dict[int, int] = {p.id: 0 for p in all_players}
+    skunk_wins: dict[int, int] = {p.id: 0 for p in all_players}
+    double_skunk_wins: dict[int, int] = {p.id: 0 for p in all_players}
+    losses_count: dict[int, int] = {p.id: 0 for p in all_players}
+    for g in year_games:
+        if g.winner_id:
+            loser_id = g.player2_id if g.winner_id == g.player1_id else g.player1_id
+            if g.is_double_skunk:
+                double_skunk_wins[g.winner_id] += 1
+            elif g.is_skunk:
+                skunk_wins[g.winner_id] += 1
+            else:
+                standard_wins[g.winner_id] += 1
+            if loser_id in losses_count:
+                losses_count[loser_id] += 1
+
+    # ── head-to-head ───────────────────────────────────────────────────
+    pid_to_idx = {p.id: i for i, p in enumerate(all_players)}
+    h2h_wins_raw = [[0] * len(all_players) for _ in all_players]
+    h2h_totals_raw = [[0] * len(all_players) for _ in all_players]
+    for g in year_games:
+        i = pid_to_idx.get(g.player1_id)
+        j = pid_to_idx.get(g.player2_id)
+        if i is None or j is None:
+            continue
+        h2h_totals_raw[i][j] += 1
+        h2h_totals_raw[j][i] += 1
+        if g.winner_id == g.player1_id:
+            h2h_wins_raw[i][j] += 1
+        elif g.winner_id == g.player2_id:
+            h2h_wins_raw[j][i] += 1
+
+    h2h_table = []
+    for i, row_player in enumerate(all_players):
+        cells = []
+        for j, col_player in enumerate(all_players):
+            if i == j:
+                cells.append({"self": True})
+            else:
+                w = h2h_wins_raw[i][j]
+                t = h2h_totals_raw[i][j]
+                cells.append({"self": False, "wins": w, "losses": t - w, "total": t})
+        h2h_table.append({"player": row_player.name, "cells": cells})
+
+    # ── first crib advantage ───────────────────────────────────────────
+    fc_games = [g for g in year_games if g.first_crib_id is not None and g.winner_id is not None]
+    first_crib_won = sum(1 for g in fc_games if g.first_crib_id == g.winner_id)
+    first_crib_pct = round(100 * first_crib_won / len(fc_games), 1) if fc_games else None
+
+    # ── fun facts ──────────────────────────────────────────────────────
+    games_per_player: dict[int, int] = {p.id: 0 for p in all_players}
+    for g in year_games:
+        games_per_player[g.player1_id] = games_per_player.get(g.player1_id, 0) + 1
+        games_per_player[g.player2_id] = games_per_player.get(g.player2_id, 0) + 1
+
+    most_active_id = max(games_per_player, key=games_per_player.get) if year_games else None
+    most_active_name = (
+        player_map[most_active_id].name
+        if most_active_id and games_per_player[most_active_id] > 0
+        else None
+    )
+    most_active_count = games_per_player.get(most_active_id, 0) if most_active_id else 0
+
+    biggest_win = min(year_games, key=lambda g: g.loser_score) if year_games else None
+    closest_game = max(year_games, key=lambda g: g.loser_score) if year_games else None
+
+    total_skunks_per_player = {p.id: skunk_wins[p.id] + double_skunk_wins[p.id] for p in all_players}
+    top_skunk_id = max(total_skunks_per_player, key=total_skunks_per_player.get) if all_players else None
+    top_skunk = (
+        player_map[top_skunk_id].name,
+        total_skunks_per_player[top_skunk_id],
+    ) if top_skunk_id and total_skunks_per_player[top_skunk_id] > 0 else None
+
+    # current win streak per player (most recent games first)
+    streaks: dict[int, int] = {}
+    for p in all_players:
+        pg = sorted(
+            [g for g in year_games if g.player1_id == p.id or g.player2_id == p.id],
+            key=lambda g: (g.played_on, g.created_at),
+            reverse=True,
+        )
+        streak = 0
+        for g in pg:
+            if g.winner_id == p.id:
+                streak += 1
+            else:
+                break
+        streaks[p.id] = streak
+
+    best_streak_id = max(streaks, key=streaks.get) if streaks else None
+    best_streak = (
+        player_map[best_streak_id].name,
+        streaks[best_streak_id],
+    ) if best_streak_id and streaks.get(best_streak_id, 0) > 1 else None
+
+    _, champion_leader = calculate_champion_scores(year)
+
+    active_players = [p for p in all_players if games_per_player.get(p.id, 0) > 0]
+    active_names = [p.name for p in active_players]
+
+    return render_template(
+        "stats.html",
+        year=year,
+        total_games=len(year_games),
+        all_player_names=[p.name for p in all_players],
+        active_player_names=active_names,
+        games_per_month=games_per_month,
+        champion_dates=champion_dates,
+        champion_series={p.name: champion_series[p.name] for p in active_players},
+        win_standard=[standard_wins[p.id] for p in active_players],
+        win_skunks=[skunk_wins[p.id] for p in active_players],
+        win_double_skunks=[double_skunk_wins[p.id] for p in active_players],
+        losses=[losses_count[p.id] for p in active_players],
+        h2h_table=h2h_table,
+        first_crib_pct=first_crib_pct,
+        first_crib_won=first_crib_won,
+        first_crib_total=len(fc_games),
+        most_active_name=most_active_name,
+        most_active_count=most_active_count,
+        biggest_win=biggest_win,
+        closest_game=closest_game,
+        top_skunk=top_skunk,
+        best_streak=best_streak,
+        champion_leader=champion_leader,
+    )
+
+
 @app.route("/leaderboard")
 def leaderboard():
     year = request.args.get("year", type=int) or date.today().year

@@ -153,3 +153,103 @@ td {
     grid-column: span 2;
   }
 }
+
+/* ── Stats page ─────────────────────────────────────────────────────── */
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.stat-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.85rem 0.75rem;
+  text-align: center;
+}
+
+.stat-card--accent {
+  border-color: var(--accent);
+  background: #eaf1f4;
+}
+
+.stat-card--streak {
+  border-color: #c4742a;
+  background: #fdf4ec;
+}
+
+.stat-number {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: var(--accent);
+  word-break: break-word;
+}
+
+.stat-card--streak .stat-number {
+  color: #c4742a;
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  color: #666;
+  margin-top: 0.3rem;
+  line-height: 1.3;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 700px) {
+  .chart-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 260px;
+}
+
+.chart-container--tall {
+  height: 320px;
+}
+
+/* ── Head-to-head table ─────────────────────────────────────────────── */
+
+.h2h-scroll {
+  overflow-x: auto;
+}
+
+.h2h-table {
+  min-width: max-content;
+}
+
+.h2h-table th:first-child {
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 0.6rem;
+}
+
+.h2h-table thead th {
+  white-space: nowrap;
+  text-align: center;
+}
+
+.h2h-table td {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.h2h-win  { background: #dff4df; font-weight: bold; }
+.h2h-loss { background: #f8dcdc; }
+.h2h-even { background: #fef9e7; }
+.h2h-self,
+.h2h-none { color: #bbb; text-align: center; }
