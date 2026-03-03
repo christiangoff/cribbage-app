@@ -18,6 +18,7 @@ db = SQLAlchemy(app)
 WINNING_SCORE = 121
 SKUNK_THRESHOLD = 90
 DOUBLE_SKUNK_THRESHOLD = 60
+MIN_GAMES_FOR_CHAMPION = 3
 
 
 class Player(db.Model):
@@ -207,13 +208,13 @@ def calculate_champion_scores(year: int) -> tuple[list[LeaderboardRow], Leaderbo
             )
         )
 
-    active_rows = [row for row in raw_rows if row.games > 0]
-    min_margin = min((row.avg_margin for row in active_rows), default=0.0)
-    max_margin = max((row.avg_margin for row in active_rows), default=0.0)
+    eligible_rows = [row for row in raw_rows if row.games >= MIN_GAMES_FOR_CHAMPION]
+    min_margin = min((row.avg_margin for row in eligible_rows), default=0.0)
+    max_margin = max((row.avg_margin for row in eligible_rows), default=0.0)
     margin_span = max_margin - min_margin
 
     for row in raw_rows:
-        if row.games == 0:
+        if row.games < MIN_GAMES_FOR_CHAMPION:
             row.champion_score = 0.0
             continue
 
@@ -222,6 +223,7 @@ def calculate_champion_scores(year: int) -> tuple[list[LeaderboardRow], Leaderbo
         )
         # Family Champion Model:
         # 60% win rate, 25% scoring margin quality, 15% participation.
+        # Minimum 3 games required to be eligible.
         row.champion_score = 100 * (
             (0.60 * row.win_rate) + (0.25 * margin_component) + (0.15 * row.participation)
         )
@@ -231,7 +233,7 @@ def calculate_champion_scores(year: int) -> tuple[list[LeaderboardRow], Leaderbo
         key=lambda x: (x.champion_score, x.wins, x.point_diff, x.points_for),
         reverse=True,
     )
-    winner = ranked[0] if ranked and ranked[0].games > 0 else None
+    winner = ranked[0] if ranked and ranked[0].games >= MIN_GAMES_FOR_CHAMPION else None
     return ranked, winner
 
 
@@ -359,17 +361,17 @@ def _compute_champion_scores_from_games(
             len(pg),
         ))
 
-    active = [(pid, wr, am, part, cnt) for pid, wr, am, part, cnt in raw if cnt > 0]
-    if not active:
+    eligible = [(pid, wr, am, part, cnt) for pid, wr, am, part, cnt in raw if cnt >= MIN_GAMES_FOR_CHAMPION]
+    if not eligible:
         return {p.id: 0.0 for p in players}
 
-    min_m = min(am for _, _, am, _, _ in active)
-    max_m = max(am for _, _, am, _, _ in active)
+    min_m = min(am for _, _, am, _, _ in eligible)
+    max_m = max(am for _, _, am, _, _ in eligible)
     span = max_m - min_m
 
     result: dict[int, float] = {}
     for pid, wr, am, part, cnt in raw:
-        if cnt == 0:
+        if cnt < MIN_GAMES_FOR_CHAMPION:
             result[pid] = 0.0
         else:
             mc = (am - min_m) / span if span > 0 else 0.5
