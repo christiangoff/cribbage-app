@@ -2,12 +2,174 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import json
 import os
+import random
+from itertools import combinations
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from sqlalchemy import CheckConstraint, inspect, text
+
+# ── Card engine ──────────────────────────────────────────────────────────────
+
+RANKS = list("A23456789TJQK")
+SUITS = list("HDCS")
+SUIT_SYMBOLS = {"H": "♥", "D": "♦", "C": "♣", "S": "♠"}
+
+
+def _rank(card: str) -> str:
+    return card[:-1]
+
+
+def _suit(card: str) -> str:
+    return card[-1]
+
+
+def card_rank_value(card: str) -> int:
+    """Point value for pegging/counting (face=10, A=1)."""
+    r = _rank(card)
+    if r in ("T", "J", "Q", "K"):
+        return 10
+    if r == "A":
+        return 1
+    return int(r)
+
+
+def card_order(card: str) -> int:
+    """Ordinal 1..13 for run detection."""
+    return RANKS.index(_rank(card)) + 1
+
+
+def card_display(card: str) -> str:
+    """Human-readable card, e.g. 'J♥'."""
+    r = _rank(card)
+    return r + SUIT_SYMBOLS[_suit(card)]
+
+
+def new_deck() -> list[str]:
+    deck = [r + s for s in SUITS for r in RANKS]
+    random.shuffle(deck)
+    return deck
+
+
+def deal_hands(deck: list[str]) -> tuple[list[str], list[str], list[str]]:
+    """Deal 6 cards each; return (p1_hand, p2_hand, remaining_deck)."""
+    return deck[:6], deck[6:12], deck[12:]
+
+
+def score_pegging_play(pile_cards: list[str], new_card: str) -> tuple[int, list[str]]:
+    """Score points earned by playing new_card onto pile_cards.
+    Returns (total_points, list_of_reason_strings)."""
+    pile = pile_cards + [new_card]
+    total = sum(card_rank_value(c) for c in pile)
+    points = 0
+    reasons: list[str] = []
+
+    # Fifteen / thirty-one
+    if total == 15:
+        points += 2
+        reasons.append("fifteen for 2")
+    if total == 31:
+        points += 2
+        reasons.append("31 for 2")
+
+    # Pairs / trips / quads — check tail of pile
+    tail = [pile[-(i + 1)] for i in range(min(4, len(pile)))]
+    same_count = 1
+    for c in tail[1:]:
+        if _rank(c) == _rank(tail[0]):
+            same_count += 1
+        else:
+            break
+    pair_pts = {2: 2, 3: 6, 4: 12}
+    pair_names = {2: "pair", 3: "three of a kind", 4: "four of a kind"}
+    if same_count >= 2:
+        points += pair_pts[same_count]
+        reasons.append(f"{pair_names[same_count]} for {pair_pts[same_count]}")
+
+    # Runs — longest run at tail of pile (min 3)
+    for run_len in range(min(7, len(pile)), 2, -1):
+        tail_run = pile[-run_len:]
+        orders = sorted(card_order(c) for c in tail_run)
+        if orders == list(range(orders[0], orders[0] + run_len)):
+            points += run_len
+            reasons.append(f"run of {run_len} for {run_len}")
+            break
+
+    return points, reasons
+
+
+def score_hand(hand4: list[str], starter: str, is_crib: bool = False) -> tuple[int, list[str]]:
+    """Score a 4-card hand + starter. Returns (points, reasons)."""
+    all5 = hand4 + [starter]
+    points = 0
+    reasons: list[str] = []
+
+    # Fifteens
+    fifteen_count = 0
+    for r in range(2, 6):
+        for combo in combinations(all5, r):
+            if sum(card_rank_value(c) for c in combo) == 15:
+                fifteen_count += 1
+    if fifteen_count:
+        pts = fifteen_count * 2
+        points += pts
+        reasons.append(f"fifteens for {pts}")
+
+    # Pairs
+    pair_count = 0
+    for a, b in combinations(all5, 2):
+        if _rank(a) == _rank(b):
+            pair_count += 1
+    if pair_count:
+        pts = pair_count * 2
+        points += pts
+        reasons.append(f"pairs for {pts}")
+
+    # Runs
+    best_run = 0
+    run_count = 0
+    for r in range(5, 2, -1):
+        for combo in combinations(all5, r):
+            orders = sorted(card_order(c) for c in combo)
+            if orders == list(range(orders[0], orders[0] + r)):
+                if r > best_run:
+                    best_run = r
+                    run_count = 1
+                elif r == best_run:
+                    run_count += 1
+        if best_run:
+            break
+    if best_run:
+        pts = best_run * run_count
+        points += pts
+        reasons.append(f"run(s) for {pts}")
+
+    # Flush (4-card flush in hand only; 5-card also counts for crib)
+    hand_suits = [_suit(c) for c in hand4]
+    if len(set(hand_suits)) == 1:
+        if _suit(starter) == hand_suits[0]:
+            points += 5
+            reasons.append("5-card flush for 5")
+        elif not is_crib:
+            points += 4
+            reasons.append("flush for 4")
+
+    # Nobs (J in hand matching starter suit)
+    for c in hand4:
+        if _rank(c) == "J" and _suit(c) == _suit(starter):
+            points += 1
+            reasons.append("nobs for 1")
+            break
+
+    return points, reasons
+
+
+def legal_pegging_plays(hand: list[str], current_count: int) -> list[str]:
+    return [c for c in hand if card_rank_value(c) + current_count <= 31]
+
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///cribbage.db"
@@ -86,6 +248,51 @@ class Game(db.Model):
     @property
     def is_skunk(self) -> bool:
         return DOUBLE_SKUNK_THRESHOLD < self.loser_score <= SKUNK_THRESHOLD
+
+
+class LiveGame(db.Model):
+    __tablename__ = "live_games"
+    id = db.Column(db.Integer, primary_key=True)
+    player1_id = db.Column(db.Integer, db.ForeignKey("players.id"), nullable=False)
+    player2_id = db.Column(db.Integer, db.ForeignKey("players.id"), nullable=True)
+    player1_score = db.Column(db.Integer, default=0)
+    player2_score = db.Column(db.Integer, default=0)
+    phase = db.Column(db.String(20), default="lobby")
+    dealer_id = db.Column(db.Integer, db.ForeignKey("players.id"), nullable=True)
+    first_dealer_id = db.Column(db.Integer, db.ForeignKey("players.id"), nullable=True)
+    state_json = db.Column(db.Text, default="{}")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    winner_id = db.Column(db.Integer, db.ForeignKey("players.id"), nullable=True)
+
+    player1 = db.relationship("Player", foreign_keys=[player1_id])
+    player2 = db.relationship("Player", foreign_keys=[player2_id])
+    dealer = db.relationship("Player", foreign_keys=[dealer_id])
+    winner = db.relationship("Player", foreign_keys=[winner_id])
+
+    def get_state(self) -> dict:
+        return json.loads(self.state_json or "{}")
+
+    def set_state(self, state: dict) -> None:
+        self.state_json = json.dumps(state)
+
+    def other_player_id(self, pid: int) -> int | None:
+        if pid == self.player1_id:
+            return self.player2_id
+        if pid == self.player2_id:
+            return self.player1_id
+        return None
+
+    def score_for(self, pid: int) -> int:
+        if pid == self.player1_id:
+            return self.player1_score
+        return self.player2_score
+
+    def add_score(self, pid: int, pts: int) -> None:
+        if pid == self.player1_id:
+            self.player1_score = min(self.player1_score + pts, 121)
+        else:
+            self.player2_score = min(self.player2_score + pts, 121)
 
 
 @dataclass
@@ -624,6 +831,554 @@ def admin_delete_game(game_id: int):
     return redirect(url_for("admin_panel"))
 
 
+# ── Live game helpers ─────────────────────────────────────────────────────────
+
+def _live_player_id() -> int | None:
+    return session.get("live_player_id")
+
+
+def _check_win(lg: LiveGame) -> bool:
+    """Return True if game just ended; sets phase/winner/completed_at and saves Game record."""
+    winner_id = None
+    if lg.player1_score >= WINNING_SCORE:
+        winner_id = lg.player1_id
+    elif lg.player2_score >= WINNING_SCORE:
+        winner_id = lg.player2_id
+    if winner_id is None:
+        return False
+
+    loser_id = lg.player2_id if winner_id == lg.player1_id else lg.player1_id
+    lg.phase = "complete"
+    lg.winner_id = winner_id
+    lg.completed_at = datetime.utcnow()
+
+    # Save to historical Game table
+    if winner_id == lg.player1_id:
+        w_score, l_score = lg.player1_score, lg.player2_score
+    else:
+        w_score, l_score = lg.player2_score, lg.player1_score
+
+    db.session.add(Game(
+        played_on=date.today(),
+        player1_id=winner_id,
+        player2_id=loser_id,
+        player1_score=w_score,
+        player2_score=l_score,
+        winner_id=winner_id,
+        first_crib_id=lg.first_dealer_id,
+        notes="Live game",
+    ))
+    return True
+
+
+def _advance_counting(lg: LiveGame) -> None:
+    """Score the current counting subphase and advance. Calls _check_win."""
+    state = lg.get_state()
+    subphase = state.get("counting_subphase", "p2_hand")
+
+    peg = state.get("pegging") or {}
+
+    if subphase == "p2_hand":
+        hand = peg.get("p2_played", state.get("p2_hand", []))
+        pid = lg.player2_id
+        next_sub = "p1_hand"
+    elif subphase == "p1_hand":
+        hand = peg.get("p1_played", state.get("p1_hand", []))
+        pid = lg.player1_id
+        next_sub = "crib"
+    else:  # crib
+        hand = state["crib"]
+        pid = lg.dealer_id
+        next_sub = None
+
+    starter = state["starter"]
+    pts, reasons = score_hand(hand, starter, is_crib=(subphase == "crib"))
+    lg.add_score(pid, pts)
+
+    p = Player.query.get(pid)
+    pname = p.name if p else "?"
+    reason_str = ", ".join(reasons) if reasons else "nothing"
+    events = state.get("events", [])
+    events.append(f"{pname} counts {'crib' if subphase == 'crib' else 'hand'}: {reason_str} = {pts} pts")
+    events = events[-10:]
+    state["events"] = events
+
+    if _check_win(lg):
+        lg.set_state(state)
+        return
+
+    if next_sub is None:
+        # Done counting — start next hand or end
+        _start_next_hand(lg, state)
+    else:
+        state["counting_subphase"] = next_sub
+        lg.set_state(state)
+        lg.phase = "counting"
+
+
+def _start_next_hand(lg: LiveGame, state: dict) -> None:
+    """Rotate dealer and deal new hand."""
+    # Rotate dealer
+    if lg.dealer_id == lg.player1_id:
+        lg.dealer_id = lg.player2_id
+    else:
+        lg.dealer_id = lg.player1_id
+
+    deck = new_deck()
+    p1_hand, p2_hand, remaining = deal_hands(deck)
+    events = state.get("events", [])
+    new_state = {
+        "p1_hand": p1_hand,
+        "p2_hand": p2_hand,
+        "crib": [],
+        "starter": None,
+        "p1_discarded": False,
+        "p2_discarded": False,
+        "deck": remaining,
+        "pegging": None,
+        "counting_subphase": None,
+        "events": events,
+    }
+    lg.set_state(new_state)
+    lg.phase = "discarding"
+
+
+# ── Live game routes ──────────────────────────────────────────────────────────
+
+@app.route("/play")
+def play_lobby():
+    all_players = Player.query.order_by(Player.name.asc()).all()
+    me_id = _live_player_id()
+    open_games = LiveGame.query.filter_by(player2_id=None, phase="lobby").order_by(LiveGame.created_at.desc()).all()
+    my_games = []
+    if me_id:
+        my_games = LiveGame.query.filter(
+            ((LiveGame.player1_id == me_id) | (LiveGame.player2_id == me_id)),
+            LiveGame.phase != "complete",
+        ).order_by(LiveGame.created_at.desc()).all()
+    return render_template("play_lobby.html", players=all_players, me_id=me_id,
+                           open_games=open_games, my_games=my_games)
+
+
+@app.route("/play/set-identity", methods=["POST"])
+def play_set_identity():
+    pid = request.form.get("player_id", type=int)
+    if pid and Player.query.get(pid):
+        session["live_player_id"] = pid
+    return redirect(url_for("play_lobby"))
+
+
+@app.route("/play/new", methods=["POST"])
+def play_new():
+    me_id = _live_player_id()
+    if not me_id:
+        flash("Set your identity first.", "error")
+        return redirect(url_for("play_lobby"))
+    lg = LiveGame(player1_id=me_id, phase="lobby")
+    db.session.add(lg)
+    db.session.commit()
+    return redirect(url_for("play_game", game_id=lg.id))
+
+
+@app.route("/play/<int:game_id>/join", methods=["POST"])
+def play_join(game_id: int):
+    me_id = _live_player_id()
+    if not me_id:
+        flash("Set your identity first.", "error")
+        return redirect(url_for("play_lobby"))
+    lg = LiveGame.query.get_or_404(game_id)
+    if lg.player2_id is not None:
+        flash("Game already has two players.", "error")
+        return redirect(url_for("play_lobby"))
+    if lg.player1_id == me_id:
+        flash("You can't join your own game as opponent.", "error")
+        return redirect(url_for("play_lobby"))
+
+    lg.player2_id = me_id
+    # Randomly assign first dealer
+    lg.dealer_id = random.choice([lg.player1_id, lg.player2_id])
+    lg.first_dealer_id = lg.dealer_id
+
+    deck = new_deck()
+    p1_hand, p2_hand, remaining = deal_hands(deck)
+    state = {
+        "p1_hand": p1_hand,
+        "p2_hand": p2_hand,
+        "crib": [],
+        "starter": None,
+        "p1_discarded": False,
+        "p2_discarded": False,
+        "deck": remaining,
+        "pegging": None,
+        "counting_subphase": None,
+        "events": ["Game started! Discard 2 cards to the crib."],
+    }
+    lg.set_state(state)
+    lg.phase = "discarding"
+    db.session.commit()
+    return redirect(url_for("play_game", game_id=lg.id))
+
+
+@app.route("/play/<int:game_id>")
+def play_game(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    me_id = _live_player_id()
+    all_players = Player.query.order_by(Player.name.asc()).all()
+    return render_template("play_game.html", game=lg, me_id=me_id, players=all_players)
+
+
+@app.route("/play/<int:game_id>/state")
+def play_state(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    me_id = _live_player_id()
+    state = lg.get_state()
+
+    # Determine role
+    my_role = None
+    if me_id == lg.player1_id:
+        my_role = "p1"
+    elif me_id == lg.player2_id:
+        my_role = "p2"
+
+    my_hand = []
+    opp_hand_count = 0
+    if my_role == "p1":
+        my_hand = state.get("p1_hand", [])
+        opp_hand_count = len(state.get("p2_hand", []))
+    elif my_role == "p2":
+        my_hand = state.get("p2_hand", [])
+        opp_hand_count = len(state.get("p1_hand", []))
+
+    pegging = state.get("pegging") or {}
+    my_played = pegging.get("p1_played", []) if my_role == "p1" else pegging.get("p2_played", [])
+
+    p1 = Player.query.get(lg.player1_id)
+    p2 = Player.query.get(lg.player2_id) if lg.player2_id else None
+    dealer = Player.query.get(lg.dealer_id) if lg.dealer_id else None
+
+    return jsonify({
+        "phase": lg.phase,
+        "my_role": my_role,
+        "player1_name": p1.name if p1 else "",
+        "player2_name": p2.name if p2 else "Waiting...",
+        "player1_score": lg.player1_score,
+        "player2_score": lg.player2_score,
+        "player1_id": lg.player1_id,
+        "player2_id": lg.player2_id,
+        "dealer_id": lg.dealer_id,
+        "dealer_name": dealer.name if dealer else "",
+        "my_hand": my_hand,
+        "my_played": my_played,
+        "opp_hand_count": opp_hand_count,
+        "starter": state.get("starter"),
+        "crib_count": len(state.get("crib", [])),
+        "pegging": pegging,
+        "counting_subphase": state.get("counting_subphase"),
+        "counting_p1_hand": pegging.get("p1_played", []),
+        "counting_p2_hand": pegging.get("p2_played", []),
+        "counting_crib": state.get("crib", []),
+        "events": state.get("events", [])[-5:],
+        "p1_discarded": state.get("p1_discarded", False),
+        "p2_discarded": state.get("p2_discarded", False),
+        "winner_id": lg.winner_id,
+    })
+
+
+@app.route("/play/<int:game_id>/discard", methods=["POST"])
+def play_discard(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    me_id = _live_player_id()
+    if lg.phase != "discarding":
+        return jsonify({"error": "Wrong phase"}), 400
+
+    my_role = "p1" if me_id == lg.player1_id else ("p2" if me_id == lg.player2_id else None)
+    if not my_role:
+        return jsonify({"error": "Not a player"}), 403
+
+    state = lg.get_state()
+    discarded_key = f"{my_role}_discarded"
+    if state.get(discarded_key):
+        return jsonify({"error": "Already discarded"}), 400
+
+    indices = request.json.get("indices", []) if request.is_json else []
+    if len(indices) != 2:
+        return jsonify({"error": "Must discard exactly 2 cards"}), 400
+
+    hand_key = f"{my_role}_hand"
+    hand = state[hand_key]
+    try:
+        indices = sorted([int(i) for i in indices], reverse=True)
+        discarded = []
+        for i in indices:
+            discarded.append(hand.pop(i))
+    except (IndexError, ValueError):
+        return jsonify({"error": "Invalid card indices"}), 400
+
+    state["crib"].extend(discarded)
+    state[discarded_key] = True
+
+    events = state.get("events", [])
+    p = Player.query.get(me_id)
+    events.append(f"{p.name if p else '?'} discarded to crib.")
+    state["events"] = events[-10:]
+
+    # If both discarded, move to cutting
+    if state["p1_discarded"] and state["p2_discarded"]:
+        lg.phase = "cutting"
+
+    lg.set_state(state)
+    db.session.commit()
+    return jsonify({"ok": True, "phase": lg.phase})
+
+
+@app.route("/play/<int:game_id>/cut", methods=["POST"])
+def play_cut(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    if lg.phase != "cutting":
+        return jsonify({"error": "Wrong phase"}), 400
+
+    state = lg.get_state()
+    deck = state["deck"]
+    starter = deck.pop(random.randrange(len(deck)))
+    state["starter"] = starter
+    state["deck"] = deck
+
+    events = state.get("events", [])
+    pts = 0
+    if _rank(starter) == "J":
+        # His heels — dealer gets 2
+        lg.add_score(lg.dealer_id, 2)
+        pts = 2
+        events.append(f"His heels! {card_display(starter)} — dealer gets 2 pts")
+        if _check_win(lg):
+            lg.set_state(state)
+            db.session.commit()
+            return jsonify({"ok": True, "starter": starter, "phase": lg.phase})
+    else:
+        events.append(f"Starter card: {card_display(starter)}")
+
+    # Set up pegging state
+    non_dealer = lg.player2_id if lg.dealer_id == lg.player1_id else lg.player1_id
+    state["pegging"] = {
+        "pile": [],
+        "count": 0,
+        "turn_player_id": non_dealer,
+        "p1_go": False,
+        "p2_go": False,
+        "p1_played": [],
+        "p2_played": [],
+    }
+    state["events"] = events[-10:]
+    lg.set_state(state)
+    lg.phase = "pegging"
+    db.session.commit()
+    return jsonify({"ok": True, "starter": starter, "phase": lg.phase})
+
+
+@app.route("/play/<int:game_id>/peg", methods=["POST"])
+def play_peg(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    me_id = _live_player_id()
+    if lg.phase != "pegging":
+        return jsonify({"error": "Wrong phase"}), 400
+
+    state = lg.get_state()
+    peg = state["pegging"]
+
+    if peg["turn_player_id"] != me_id:
+        return jsonify({"error": "Not your turn"}), 400
+
+    my_role = "p1" if me_id == lg.player1_id else "p2"
+    hand_key = f"{my_role}_hand"
+    played_key = f"{my_role}_played"
+
+    card = request.json.get("card") if request.is_json else None
+    if not card or card not in state[hand_key]:
+        return jsonify({"error": "Invalid card"}), 400
+    if card_rank_value(card) + peg["count"] > 31:
+        return jsonify({"error": "Card would exceed 31"}), 400
+
+    # Play the card
+    state[hand_key].remove(card)
+    peg[played_key].append(card)
+    peg["pile"].append(card)
+    peg["count"] += card_rank_value(card)
+
+    pts, reasons = score_pegging_play(peg["pile"][:-1], card)
+    events = state.get("events", [])
+    p = Player.query.get(me_id)
+    pname = p.name if p else "?"
+    reason_str = f" ({', '.join(reasons)})" if reasons else ""
+    events.append(f"{pname} played {card_display(card)}{reason_str} — count: {peg['count']}")
+
+    if pts:
+        lg.add_score(me_id, pts)
+        if _check_win(lg):
+            state["events"] = events[-10:]
+            lg.set_state(state)
+            db.session.commit()
+            return jsonify({"ok": True, "phase": lg.phase})
+
+    # Reset go flags since a card was played
+    peg["p1_go"] = False
+    peg["p2_go"] = False
+
+    # Check for 31
+    if peg["count"] == 31:
+        peg["pile"] = []
+        peg["count"] = 0
+        events.append("31! Pile reset.")
+
+    # Check if all cards played
+    p1_done = len(state["p1_hand"]) == 0 and len(peg["p1_played"]) == 4
+    p2_done = len(state["p2_hand"]) == 0 and len(peg["p2_played"]) == 4
+
+    # Actually check remaining hands
+    p1_remaining = state["p1_hand"]
+    p2_remaining = state["p2_hand"]
+
+    if not p1_remaining and not p2_remaining:
+        # Last card point
+        lg.add_score(me_id, 1)
+        events.append(f"{pname} gets last card (+1)")
+        state["events"] = events[-10:]
+        lg.set_state(state)
+        if _check_win(lg):
+            db.session.commit()
+            return jsonify({"ok": True, "phase": lg.phase})
+        # Move to counting
+        state["counting_subphase"] = "p2_hand"
+        lg.set_state(state)
+        lg.phase = "counting"
+        _advance_counting(lg)
+        db.session.commit()
+        return jsonify({"ok": True, "phase": lg.phase})
+
+    # Switch turn to opponent (if they have legal plays)
+    opp_id = lg.other_player_id(me_id)
+    opp_role = "p1" if opp_id == lg.player1_id else "p2"
+    opp_hand = state[f"{opp_role}_hand"]
+    legal = legal_pegging_plays(opp_hand, peg["count"])
+    if legal:
+        peg["turn_player_id"] = opp_id
+    else:
+        # Check if current player also has no legal plays
+        my_legal = legal_pegging_plays(state[hand_key], peg["count"])
+        if not my_legal:
+            # Both stuck — reset pile, award go point
+            lg.add_score(me_id, 1)
+            events.append(f"Go! {pname} gets 1 pt. Pile reset.")
+            peg["pile"] = []
+            peg["count"] = 0
+            peg["p1_go"] = False
+            peg["p2_go"] = False
+            peg["turn_player_id"] = opp_id
+        # else keep turn with current player
+
+    state["events"] = events[-10:]
+    state["pegging"] = peg
+    lg.set_state(state)
+    db.session.commit()
+    return jsonify({"ok": True, "phase": lg.phase})
+
+
+@app.route("/play/<int:game_id>/go", methods=["POST"])
+def play_go(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    me_id = _live_player_id()
+    if lg.phase != "pegging":
+        return jsonify({"error": "Wrong phase"}), 400
+
+    state = lg.get_state()
+    peg = state["pegging"]
+    if peg["turn_player_id"] != me_id:
+        return jsonify({"error": "Not your turn"}), 400
+
+    my_role = "p1" if me_id == lg.player1_id else "p2"
+    hand_key = f"{my_role}_hand"
+    go_key = f"{my_role}_go"
+
+    # Verify they truly can't play
+    legal = legal_pegging_plays(state[hand_key], peg["count"])
+    if legal:
+        return jsonify({"error": "You have legal plays"}), 400
+
+    peg[go_key] = True
+    events = state.get("events", [])
+    p = Player.query.get(me_id)
+    pname = p.name if p else "?"
+    events.append(f"{pname} says Go!")
+
+    opp_id = lg.other_player_id(me_id)
+    opp_role = "p1" if opp_id == lg.player1_id else "p2"
+    opp_go_key = f"{opp_role}_go"
+
+    if peg[opp_go_key]:
+        # Both said go — find last player to actually play and give them 1 pt
+        last_player = me_id  # fallback: award to whoever said go second
+        if peg["pile"]:
+            # We award to whichever player played the last card in the pile
+            # Track by checking whose pile the last card is in
+            last_card = peg["pile"][-1]
+            if last_card in peg.get("p1_played", []):
+                last_player = lg.player1_id
+            else:
+                last_player = lg.player2_id
+        lg.add_score(last_player, 1)
+        lp = Player.query.get(last_player)
+        events.append(f"Go! {lp.name if lp else '?'} gets 1 pt. Pile reset.")
+        peg["pile"] = []
+        peg["count"] = 0
+        peg["p1_go"] = False
+        peg["p2_go"] = False
+        peg["turn_player_id"] = opp_id
+    else:
+        # Switch turn to opponent
+        peg["turn_player_id"] = opp_id
+
+    state["events"] = events[-10:]
+    state["pegging"] = peg
+    lg.set_state(state)
+
+    if _check_win(lg):
+        db.session.commit()
+        return jsonify({"ok": True, "phase": lg.phase})
+
+    db.session.commit()
+    return jsonify({"ok": True, "phase": lg.phase})
+
+
+@app.route("/play/<int:game_id>/delete", methods=["POST"])
+def play_delete(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    me_id = _live_player_id()
+    if me_id not in (lg.player1_id, lg.player2_id):
+        flash("You can only delete your own games.", "error")
+        return redirect(url_for("play_lobby"))
+    if lg.phase == "complete":
+        flash("Completed games cannot be deleted here.", "error")
+        return redirect(url_for("play_lobby"))
+    db.session.delete(lg)
+    db.session.commit()
+    flash("Game deleted.", "success")
+    return redirect(url_for("play_lobby"))
+
+
+@app.route("/play/<int:game_id>/count", methods=["POST"])
+def play_count(game_id: int):
+    """Advance counting by one subphase (called by either player to trigger auto-scoring)."""
+    lg = LiveGame.query.get_or_404(game_id)
+    me_id = _live_player_id()
+    if lg.phase != "counting":
+        return jsonify({"error": "Wrong phase"}), 400
+    if me_id not in (lg.player1_id, lg.player2_id):
+        return jsonify({"error": "Not a player"}), 403
+
+    _advance_counting(lg)
+    db.session.commit()
+    return jsonify({"ok": True, "phase": lg.phase})
+
+
 @app.cli.command("init-db")
 def init_db() -> None:
     db.create_all()
@@ -633,7 +1388,8 @@ def init_db() -> None:
 
 def ensure_schema_updates() -> None:
     inspector = inspect(db.engine)
-    if "games" not in inspector.get_table_names():
+    tables = inspector.get_table_names()
+    if "games" not in tables:
         return
 
     game_columns = {col["name"] for col in inspector.get_columns("games")}

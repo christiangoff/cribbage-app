@@ -1,0 +1,83 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>Live Cribbage</h2>
+
+<div class="panel">
+  <h3>Your Identity</h3>
+  {% if me_id %}
+    {% for p in players %}{% if p.id == me_id %}
+      <p>Playing as: <strong>{{ p.name }}</strong></p>
+    {% endif %}{% endfor %}
+  {% else %}
+    <p>Select your name to play:</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('play_set_identity') }}" class="inline-form">
+    <select name="player_id">
+      {% for p in players %}
+        <option value="{{ p.id }}" {% if p.id == me_id %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Set Identity</button>
+  </form>
+</div>
+
+{% if me_id %}
+<div class="panel">
+  <h3>Start a New Game</h3>
+  <form method="post" action="{{ url_for('play_new') }}">
+    <button type="submit">Create Game &amp; Wait for Opponent</button>
+  </form>
+</div>
+
+{% if my_games %}
+<div class="panel">
+  <h3>Your Active Games</h3>
+  <table>
+    <thead><tr><th>Game</th><th>Players</th><th>Phase</th><th></th></tr></thead>
+    <tbody>
+      {% for g in my_games %}
+      <tr>
+        <td>#{{ g.id }}</td>
+        <td>
+          {{ g.player1.name }} vs
+          {% if g.player2 %}{{ g.player2.name }}{% else %}<em>waiting…</em>{% endif %}
+        </td>
+        <td>{{ g.phase }}</td>
+        <td>
+          <a href="{{ url_for('play_game', game_id=g.id) }}">Resume</a>
+          <form method="post" action="{{ url_for('play_delete', game_id=g.id) }}" style="display:inline" onsubmit="return confirm('Delete this game?')">
+            <button type="submit" class="danger" style="margin-left:0.5rem;font-size:0.85rem;padding:0.2rem 0.5rem">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if open_games %}
+<div class="panel">
+  <h3>Open Games (Waiting for Opponent)</h3>
+  <table>
+    <thead><tr><th>Game</th><th>Created by</th><th></th></tr></thead>
+    <tbody>
+      {% for g in open_games %}
+      {% if g.player1_id != me_id %}
+      <tr>
+        <td>#{{ g.id }}</td>
+        <td>{{ g.player1.name }}</td>
+        <td>
+          <form method="post" action="{{ url_for('play_join', game_id=g.id) }}">
+            <button type="submit">Join</button>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,305 @@
+{% extends "layout.html" %}
+{% block content %}
+<div id="game-root">
+  <div class="play-header">
+    <h2>Live Game #{{ game.id }}</h2>
+    <div class="play-scores">
+      <div class="score-box" id="score-p1">
+        <span class="score-name" id="name-p1">{{ game.player1.name }}</span>
+        <span class="score-num" id="pts-p1">{{ game.player1_score }}</span>
+      </div>
+      <div class="score-box" id="score-p2">
+        <span class="score-name" id="name-p2">{% if game.player2 %}{{ game.player2.name }}{% else %}Waiting…{% endif %}</span>
+        <span class="score-num" id="pts-p2">{{ game.player2_score }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="peg-board" id="peg-board">
+      {% for i in range(121) %}
+      <div class="peg-hole" id="hole-{{ i }}">
+        <span class="peg p1-peg" id="peg1-{{ i }}"></span>
+        <span class="peg p2-peg" id="peg2-{{ i }}"></span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel" id="status-panel">
+    <p id="status-msg">Loading…</p>
+    <div id="status-actions"></div>
+  </div>
+
+  <div class="panel" id="starter-panel" style="display:none">
+    <strong>Starter:</strong> <span id="starter-card"></span>
+  </div>
+
+  <div class="panel" id="peg-area" style="display:none">
+    <h4>Pegging — count: <span id="peg-count">0</span></h4>
+    <div id="peg-pile" style="margin-bottom:0.5rem"></div>
+    <div><strong>Opponent:</strong> <span id="opp-hand-cards"></span></div>
+  </div>
+
+  <div class="panel" id="hand-panel" style="display:none">
+    <h4 id="hand-label">Your hand</h4>
+    <div id="hand-cards"></div>
+    <div id="hand-actions" style="margin-top:0.5rem"></div>
+  </div>
+
+  <div class="panel">
+    <h4>Events</h4>
+    <ul id="event-log" style="margin:0;padding-left:1.2rem;font-size:0.9rem"></ul>
+  </div>
+
+  <p><a href="{{ url_for('play_lobby') }}">← Back to lobby</a></p>
+</div>
+
+<script>
+const GAME_ID = {{ game.id }};
+const MY_ID = {{ session.get('live_player_id') | tojson }};
+const SUIT_SYM = {H:'♥', D:'♦', C:'♣', S:'♠'};
+const POLL_MS = 2000;
+
+let selectedDiscard = [];
+let lastPhase = null;
+let polling = true;
+
+function rankVal(card) {
+  const r = card.slice(0, -1);
+  return ['T','J','Q','K'].includes(r) ? 10 : r === 'A' ? 1 : parseInt(r);
+}
+
+function cardHtml(card, clickable, selected) {
+  const r = card.slice(0,-1), s = card.slice(-1);
+  const red = s==='H'||s==='D';
+  const cls = ['card', red?'red':'black', selected?'selected':'', clickable?'clickable':''].filter(Boolean).join(' ');
+  return `<span class="${cls}" data-card="${card}">${r}${SUIT_SYM[s]}</span>`;
+}
+
+function cardBack() { return '<span class="card card-back">?</span>'; }
+
+function updatePegBoard(s1, s2) {
+  document.querySelectorAll('.p1-peg,.p2-peg').forEach(el => el.className.replace);
+  // Efficient: just toggle visibility on the two relevant holes
+  for (let i=0; i<=120; i++) {
+    document.getElementById('peg1-'+i).classList.toggle('active', i===Math.min(s1,120));
+    document.getElementById('peg2-'+i).classList.toggle('active', i===Math.min(s2,120));
+  }
+}
+
+function setText(id, t) { const el=document.getElementById(id); if(el) el.textContent=t; }
+function show(id) { const el=document.getElementById(id); if(el) el.style.display=''; }
+function hide(id) { const el=document.getElementById(id); if(el) el.style.display='none'; }
+
+function render(data) {
+  setText('name-p1', data.player1_name);
+  setText('name-p2', data.player2_name || 'Waiting…');
+  setText('pts-p1', data.player1_score);
+  setText('pts-p2', data.player2_score);
+  updatePegBoard(data.player1_score, data.player2_score);
+
+  // Events
+  const events = (data.events||[]).slice().reverse();
+  document.getElementById('event-log').innerHTML = events.map(e=>`<li>${e}</li>`).join('');
+
+  // Starter
+  if (data.starter) {
+    const r=data.starter.slice(0,-1), s=data.starter.slice(-1);
+    const red=s==='H'||s==='D';
+    document.getElementById('starter-card').innerHTML = cardHtml(data.starter,false,false);
+    show('starter-panel');
+  } else {
+    hide('starter-panel');
+  }
+
+  const phase = data.phase;
+  const myRole = data.my_role;
+  const statusMsg = document.getElementById('status-msg');
+  const statusActions = document.getElementById('status-actions');
+  const dealerLabel = data.dealer_name ? ` | Dealer: ${data.dealer_name}` : '';
+
+  // Clear dynamic actions on phase change
+  if (phase !== lastPhase) {
+    statusActions.innerHTML = '';
+    selectedDiscard = [];
+    lastPhase = phase;
+  }
+
+  if (phase === 'lobby') {
+    statusMsg.textContent = 'Waiting for opponent to join…';
+    hide('hand-panel'); hide('peg-area');
+    return;
+  }
+
+  if (phase === 'complete') {
+    const wName = data.player1_score >= 121 ? data.player1_name : data.player2_name;
+    statusMsg.innerHTML = `<strong>Game over! ${wName} wins!</strong>`;
+    hide('hand-panel'); hide('peg-area');
+    polling = false;
+    return;
+  }
+
+  if (!myRole) {
+    statusMsg.textContent = 'You are a spectator.';
+    hide('hand-panel'); hide('peg-area');
+    return;
+  }
+
+  if (phase === 'discarding') {
+    hide('peg-area');
+    show('hand-panel');
+    document.getElementById('hand-label').textContent = 'Your hand';
+    const myDiscarded = myRole==='p1' ? data.p1_discarded : data.p2_discarded;
+    if (myDiscarded) {
+      selectedDiscard = [];
+      statusMsg.textContent = 'Waiting for opponent to discard…' + dealerLabel;
+      document.getElementById('hand-cards').innerHTML = data.my_hand.map(c=>cardHtml(c,false,false)).join(' ');
+      document.getElementById('hand-actions').innerHTML = '';
+    } else {
+      statusMsg.textContent = 'Discard 2 cards to the crib.' + dealerLabel;
+      // Only re-render hand if user hasn't started selecting yet
+      if (selectedDiscard.length === 0) {
+        renderDiscardHand(data.my_hand);
+      }
+    }
+  } else if (phase === 'cutting') {
+    hide('peg-area'); hide('hand-panel');
+    const isNonDealer = MY_ID !== data.dealer_id;
+    if (isNonDealer) {
+      statusMsg.textContent = 'Both discarded. Cut the deck!' + dealerLabel;
+      if (!statusActions.querySelector('#cut-btn')) {
+        const btn = document.createElement('button');
+        btn.id = 'cut-btn'; btn.textContent = 'Cut the Deck';
+        btn.onclick = () => { btn.disabled=true; post('/cut').then(poll); };
+        statusActions.appendChild(btn);
+      }
+    } else {
+      statusMsg.textContent = 'Waiting for opponent to cut the deck…' + dealerLabel;
+    }
+  } else if (phase === 'pegging') {
+    show('peg-area'); show('hand-panel');
+    document.getElementById('hand-label').textContent = 'Your hand';
+    const peg = data.pegging||{};
+    const isMyTurn = peg.turn_player_id === MY_ID;
+    statusMsg.textContent = `Pegging — count: ${peg.count||0}${dealerLabel} | ${isMyTurn?'Your turn':'Opponent\'s turn'}`;
+    document.getElementById('peg-count').textContent = peg.count||0;
+    document.getElementById('peg-pile').innerHTML = (peg.pile||[]).map(c=>cardHtml(c,false,false)).join(' ');
+    document.getElementById('opp-hand-cards').innerHTML = Array(data.opp_hand_count).fill(cardBack()).join(' ');
+    renderPeggingHand(data.my_hand, peg.count||0, isMyTurn);
+  } else if (phase === 'counting') {
+    hide('peg-area'); show('hand-panel');
+    const sub = data.counting_subphase||'';
+    const p1Name = data.player1_name, p2Name = data.player2_name;
+
+    // Pick which hand to display
+    const p1IsDealer = data.dealer_id === data.player1_id;
+    let countingHand, handOwner;
+    if (sub === 'p2_hand') {
+      countingHand = data.counting_p2_hand || [];
+      handOwner = p2Name + (p1IsDealer ? ' (non-dealer)' : ' (dealer)');
+    } else if (sub === 'p1_hand') {
+      countingHand = data.counting_p1_hand || [];
+      handOwner = p1Name + (p1IsDealer ? ' (dealer)' : ' (non-dealer)');
+    } else {
+      countingHand = data.counting_crib || [];
+      handOwner = 'Crib (' + data.dealer_name + ')';
+    }
+
+    statusMsg.textContent = `Scoring: ${handOwner}${dealerLabel}`;
+    document.getElementById('hand-label').textContent = handOwner;
+    document.getElementById('hand-cards').innerHTML = countingHand.map(c=>cardHtml(c,false,false)).join(' ');
+    document.getElementById('hand-actions').innerHTML = '';
+
+    if (!statusActions.querySelector('#count-btn')) {
+      const btn = document.createElement('button');
+      btn.id = 'count-btn'; btn.textContent = 'Score & Continue';
+      btn.onclick = () => { btn.disabled=true; post('/count').then(poll); };
+      statusActions.appendChild(btn);
+    } else {
+      statusActions.querySelector('#count-btn').disabled = false;
+    }
+  } else {
+    statusMsg.textContent = `Phase: ${phase}`;
+  }
+}
+
+function renderDiscardHand(hand) {
+  selectedDiscard = [];
+  const handCards = document.getElementById('hand-cards');
+  const handActions = document.getElementById('hand-actions');
+  handCards.innerHTML = hand.map(c=>cardHtml(c,true,false)).join(' ');
+  handActions.innerHTML = '';
+
+  handCards.querySelectorAll('.card').forEach((el, i) => {
+    el.addEventListener('click', () => {
+      if (selectedDiscard.includes(i)) {
+        selectedDiscard = selectedDiscard.filter(x=>x!==i);
+        el.classList.remove('selected');
+      } else if (selectedDiscard.length < 2) {
+        selectedDiscard.push(i);
+        el.classList.add('selected');
+      }
+      handActions.innerHTML = selectedDiscard.length===2
+        ? '<button id="discard-btn">Discard Selected</button>' : '';
+      if (selectedDiscard.length===2) {
+        document.getElementById('discard-btn').onclick = () => {
+          document.getElementById('discard-btn').disabled = true;
+          postJson('/discard', {indices: selectedDiscard}).then(poll);
+        };
+      }
+    });
+  });
+}
+
+function renderPeggingHand(hand, count, isMyTurn) {
+  const handCards = document.getElementById('hand-cards');
+  const handActions = document.getElementById('hand-actions');
+  const hasLegal = hand.some(c => rankVal(c)+count <= 31);
+  handCards.innerHTML = hand.map(c => {
+    const legal = rankVal(c)+count <= 31;
+    return cardHtml(c, isMyTurn && legal, false);
+  }).join(' ');
+  handActions.innerHTML = '';
+
+  if (isMyTurn) {
+    if (!hasLegal) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Say Go';
+      btn.onclick = () => { btn.disabled=true; post('/go').then(poll); };
+      handActions.appendChild(btn);
+    } else {
+      handCards.querySelectorAll('.card.clickable').forEach(el => {
+        el.addEventListener('click', () => {
+          handCards.querySelectorAll('.card').forEach(e=>e.style.pointerEvents='none');
+          postJson('/peg', {card: el.dataset.card}).then(poll);
+        });
+      });
+    }
+  } else {
+    handActions.innerHTML = '<em>Waiting for opponent…</em>';
+  }
+}
+
+function post(path) {
+  return fetch(`/play/${GAME_ID}${path}`, {method:'POST'}).then(r=>r.json());
+}
+function postJson(path, body) {
+  return fetch(`/play/${GAME_ID}${path}`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+  }).then(r=>r.json());
+}
+
+function poll() {
+  fetch(`/play/${GAME_ID}/state`)
+    .then(r=>r.json())
+    .then(data => {
+      render(data);
+      if (polling && data.phase !== 'complete') setTimeout(poll, POLL_MS);
+    })
+    .catch(() => { if (polling) setTimeout(poll, POLL_MS*2); });
+}
+
+poll();
+</script>
+{% endblock %}

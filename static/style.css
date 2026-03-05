@@ -253,3 +253,96 @@ td {
 .h2h-even { background: #fef9e7; }
 .h2h-self,
 .h2h-none { color: #bbb; text-align: center; }
+
+/* ── Live game ───────────────────────────────────────────────────────── */
+
+.play-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.play-scores {
+  display: flex;
+  gap: 1rem;
+}
+
+.score-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  text-align: center;
+  min-width: 80px;
+}
+
+.score-name {
+  display: block;
+  font-size: 0.8rem;
+  color: #555;
+}
+
+.score-num {
+  display: block;
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+/* Card styles */
+.card {
+  display: inline-block;
+  border: 1px solid #888;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 1.1rem;
+  background: #fff;
+  margin: 2px;
+  font-family: monospace;
+}
+
+.card.red { color: #8f2d2d; }
+.card.black { color: #212121; }
+.card.selected { outline: 2px solid var(--accent); transform: translateY(-4px); }
+.card.clickable { cursor: pointer; }
+.card.clickable:hover { background: #eaf1f4; }
+.card-back { background: var(--accent); color: var(--accent); border-color: var(--accent); }
+
+/* Peg board */
+.peg-board {
+  display: grid;
+  grid-template-columns: repeat(30, 1fr);
+  gap: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.peg-hole {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #d7c8a1;
+  border: 1px solid #b8a57a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+}
+
+.peg {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.peg.active { opacity: 1; }
+
+.p1-peg { background: #c0392b; left: 2px; }
+.p2-peg { background: #2471a3; right: 2px; }
