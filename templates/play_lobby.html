@@ -2,26 +2,23 @@
 {% block content %}
 <h2>Live Cribbage</h2>
 
+{% if not current_user %}
 <div class="panel">
-  <h3>Your Identity</h3>
-  {% if me_id %}
-    {% for p in players %}{% if p.id == me_id %}
-      <p>Playing as: <strong>{{ p.name }}</strong></p>
-    {% endif %}{% endfor %}
-  {% else %}
-    <p>Select your name to play:</p>
-  {% endif %}
-  <form method="post" action="{{ url_for('play_set_identity') }}" class="inline-form">
-    <select name="player_id">
-      {% for p in players %}
-        <option value="{{ p.id }}" {% if p.id == me_id %}selected{% endif %}>{{ p.name }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit">Set Identity</button>
-  </form>
+  <p>You must be <a href="{{ url_for('login') }}">logged in</a> to play live games.</p>
+</div>
+{% elif not me_id %}
+<div class="panel">
+  <p>Your account isn't linked to a player yet. Ask an admin to link your account to a player before you can play.</p>
+</div>
+{% else %}
+
+<div class="panel">
+  <h3>Playing as</h3>
+  {% for p in players %}{% if p.id == me_id %}
+    <p><strong>{{ p.name }}</strong></p>
+  {% endif %}{% endfor %}
 </div>
 
-{% if me_id %}
 <div class="panel">
   <h3>Start a New Game</h3>
   <form method="post" action="{{ url_for('play_new') }}">
@@ -79,5 +76,6 @@
   </table>
 </div>
 {% endif %}
+
 {% endif %}
 {% endblock %}

@@ -90,6 +90,11 @@ button.danger {
   margin: 0;
 }
 
+.nav-user {
+  color: rgba(255,255,255,0.75);
+  font-size: 0.9rem;
+}
+
 .link-button {
   background: transparent;
   border: none;

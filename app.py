@@ -5,12 +5,14 @@ from datetime import date, datetime
 import json
 import os
 import random
+import secrets
 from itertools import combinations
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from sqlalchemy import CheckConstraint, inspect, text
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # ── Card engine ──────────────────────────────────────────────────────────────
 
@@ -295,6 +297,40 @@ class LiveGame(db.Model):
             self.player2_score = min(self.player2_score + pts, 121)
 
 
+class User(db.Model):
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    player_id = db.Column(db.Integer, db.ForeignKey("players.id"), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    player = db.relationship("Player", foreign_keys=[player_id])
+
+    def __repr__(self) -> str:
+        return f"<User {self.username}>"
+
+
+class InviteCode(db.Model):
+    __tablename__ = "invite_codes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    used_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    used_at = db.Column(db.DateTime, nullable=True)
+
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+    used_by = db.relationship("User", foreign_keys=[used_by_id])
+
+    @property
+    def is_used(self) -> bool:
+        return self.used_by_id is not None
+
+
 @dataclass
 class LeaderboardRow:
     player: Player
@@ -314,16 +350,39 @@ class LeaderboardRow:
     champion_score: float
 
 
+def current_user() -> "User | None":
+    uid = session.get("user_id")
+    if uid:
+        return User.query.get(uid)
+    return None
+
+
 def is_admin() -> bool:
-    return bool(session.get("is_admin"))
+    u = current_user()
+    return bool(u and u.is_admin)
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not current_user():
+            flash("Please log in to access that page.", "error")
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+
+    return wrapped
 
 
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not is_admin():
-            flash("Admin login required.", "error")
-            return redirect(url_for("admin_login"))
+        u = current_user()
+        if not u:
+            flash("Please log in.", "error")
+            return redirect(url_for("login"))
+        if not u.is_admin:
+            flash("Admin access required.", "error")
+            return redirect(url_for("index"))
         return view(*args, **kwargs)
 
     return wrapped
@@ -331,7 +390,8 @@ def admin_required(view):
 
 @app.context_processor
 def inject_auth_context():
-    return {"is_admin": is_admin()}
+    u = current_user()
+    return {"is_admin": bool(u and u.is_admin), "current_user": u}
 
 
 def calculate_champion_scores(year: int) -> tuple[list[LeaderboardRow], LeaderboardRow | None]:
@@ -465,6 +525,7 @@ def players():
 
 
 @app.route("/games", methods=["GET", "POST"])
+@login_required
 def games():
     all_players = Player.query.order_by(Player.name.asc()).all()
     if request.method == "POST":
@@ -749,24 +810,64 @@ def leaderboard():
     return render_template("leaderboard.html", year=year, ranked=ranked, winner=winner)
 
 
-@app.route("/admin/login", methods=["GET", "POST"])
-def admin_login():
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user():
+        return redirect(url_for("index"))
+    invite_code_param = request.args.get("code", "")
     if request.method == "POST":
+        username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if password == app.config["ADMIN_PASSWORD"]:
-            session["is_admin"] = True
-            flash("Admin login successful.", "success")
-            return redirect(url_for("admin_panel"))
+        confirm = request.form.get("confirm", "")
+        code_str = request.form.get("invite_code", "").strip()
+        if not username or not password:
+            flash("Username and password are required.", "error")
+            return redirect(url_for("register", code=code_str))
+        if password != confirm:
+            flash("Passwords do not match.", "error")
+            return redirect(url_for("register", code=code_str))
+        if User.query.filter_by(username=username).first():
+            flash("Username already taken.", "error")
+            return redirect(url_for("register", code=code_str))
+        invite = InviteCode.query.filter_by(code=code_str).first()
+        if not invite or invite.is_used:
+            flash("Invalid or already-used invite code.", "error")
+            return redirect(url_for("register", code=code_str))
+        user = User(
+            username=username,
+            password_hash=generate_password_hash(password, method="pbkdf2:sha256"),
+        )
+        db.session.add(user)
+        db.session.flush()  # get user.id before commit
+        invite.used_by_id = user.id
+        invite.used_at = datetime.utcnow()
+        db.session.commit()
+        session["user_id"] = user.id
+        flash(f"Welcome, {username}!", "success")
+        return redirect(url_for("index"))
+    return render_template("register.html", invite_code=invite_code_param)
 
-        flash("Invalid admin password.", "error")
-        return redirect(url_for("admin_login"))
 
-    return render_template("admin_login.html")
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user():
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            session["user_id"] = user.id
+            flash(f"Welcome back, {user.username}!", "success")
+            return redirect(url_for("index"))
+        flash("Invalid username or password.", "error")
+        return redirect(url_for("login"))
+    return render_template("login.html")
 
 
-@app.route("/admin/logout", methods=["POST"])
-def admin_logout():
-    session.pop("is_admin", None)
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.pop("user_id", None)
     flash("Logged out.", "success")
     return redirect(url_for("index"))
 
@@ -776,7 +877,20 @@ def admin_logout():
 def admin_panel():
     all_players = Player.query.order_by(Player.name.asc()).all()
     recent_games = Game.query.order_by(Game.played_on.desc(), Game.created_at.desc()).limit(50).all()
-    return render_template("admin.html", players=all_players, recent_games=recent_games)
+    all_users = User.query.order_by(User.username.asc()).all()
+    invites = InviteCode.query.order_by(InviteCode.created_at.desc()).limit(50).all()
+    return render_template("admin.html", players=all_players, recent_games=recent_games, users=all_users, invites=invites)
+
+
+@app.route("/admin/invites/generate", methods=["POST"])
+@admin_required
+def admin_generate_invite():
+    code = secrets.token_urlsafe(12)
+    invite = InviteCode(code=code, created_by_id=current_user().id)
+    db.session.add(invite)
+    db.session.commit()
+    flash(f"Invite code generated: {code}", "success")
+    return redirect(url_for("admin_panel"))
 
 
 @app.route("/admin/players/add", methods=["POST"])
@@ -831,9 +945,59 @@ def admin_delete_game(game_id: int):
     return redirect(url_for("admin_panel"))
 
 
+@app.route("/admin/users/<int:user_id>/promote", methods=["POST"])
+@admin_required
+def admin_promote_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    user.is_admin = True
+    db.session.commit()
+    flash(f"{user.username} is now an admin.", "success")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/users/<int:user_id>/demote", methods=["POST"])
+@admin_required
+def admin_demote_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user().id:
+        flash("You can't demote yourself.", "error")
+        return redirect(url_for("admin_panel"))
+    user.is_admin = False
+    db.session.commit()
+    flash(f"{user.username} is no longer an admin.", "success")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/users/<int:user_id>/link-player", methods=["POST"])
+@admin_required
+def admin_link_player(user_id: int):
+    user = User.query.get_or_404(user_id)
+    player_id = request.form.get("player_id", type=int)
+    user.player_id = player_id if player_id else None
+    db.session.commit()
+    flash(f"Updated player link for {user.username}.", "success")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user().id:
+        flash("You can't delete yourself.", "error")
+        return redirect(url_for("admin_panel"))
+    db.session.delete(user)
+    db.session.commit()
+    flash(f"Deleted user {user.username}.", "success")
+    return redirect(url_for("admin_panel"))
+
+
 # ── Live game helpers ─────────────────────────────────────────────────────────
 
 def _live_player_id() -> int | None:
+    u = current_user()
+    if u and u.player_id:
+        return u.player_id
     return session.get("live_player_id")
 
 
@@ -969,6 +1133,7 @@ def play_set_identity():
 
 
 @app.route("/play/new", methods=["POST"])
+@login_required
 def play_new():
     me_id = _live_player_id()
     if not me_id:
@@ -981,6 +1146,7 @@ def play_new():
 
 
 @app.route("/play/<int:game_id>/join", methods=["POST"])
+@login_required
 def play_join(game_id: int):
     me_id = _live_player_id()
     if not me_id:
@@ -1085,6 +1251,7 @@ def play_state(game_id: int):
 
 
 @app.route("/play/<int:game_id>/discard", methods=["POST"])
+@login_required
 def play_discard(game_id: int):
     lg = LiveGame.query.get_or_404(game_id)
     me_id = _live_player_id()
@@ -1176,6 +1343,7 @@ def play_cut(game_id: int):
 
 
 @app.route("/play/<int:game_id>/peg", methods=["POST"])
+@login_required
 def play_peg(game_id: int):
     lg = LiveGame.query.get_or_404(game_id)
     me_id = _live_player_id()
@@ -1283,6 +1451,7 @@ def play_peg(game_id: int):
 
 
 @app.route("/play/<int:game_id>/go", methods=["POST"])
+@login_required
 def play_go(game_id: int):
     lg = LiveGame.query.get_or_404(game_id)
     me_id = _live_player_id()
@@ -1349,6 +1518,7 @@ def play_go(game_id: int):
 
 
 @app.route("/play/<int:game_id>/delete", methods=["POST"])
+@login_required
 def play_delete(game_id: int):
     lg = LiveGame.query.get_or_404(game_id)
     me_id = _live_player_id()
@@ -1365,6 +1535,7 @@ def play_delete(game_id: int):
 
 
 @app.route("/play/<int:game_id>/count", methods=["POST"])
+@login_required
 def play_count(game_id: int):
     """Advance counting by one subphase (called by either player to trigger auto-scoring)."""
     lg = LiveGame.query.get_or_404(game_id)

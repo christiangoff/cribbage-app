@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel narrow-form">
+  <h2>Register</h2>
+  <form method="post" action="{{ url_for('register') }}" class="form-grid">
+    <label for="invite_code">Invite Code</label>
+    <input id="invite_code" name="invite_code" type="text" value="{{ invite_code }}" required autofocus>
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" maxlength="80" required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required>
+    <label for="confirm">Confirm Password</label>
+    <input id="confirm" name="confirm" type="password" required>
+    <button type="submit">Create Account</button>
+  </form>
+  <p style="margin-top:1rem">Already have an account? <a href="{{ url_for('login') }}">Log In</a></p>
+</section>
+{% endblock %}

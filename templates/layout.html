@@ -11,17 +11,21 @@
     <h1>Family Cribbage Tracker</h1>
     <nav>
       <a href="{{ url_for('index') }}">Home</a>
-      <a href="{{ url_for('games') }}">Games</a>
       <a href="{{ url_for('leaderboard') }}">Leaderboard</a>
       <a href="{{ url_for('stats') }}">Stats</a>
       <a href="{{ url_for('play_lobby') }}">Play</a>
-      {% if is_admin %}
-        <a href="{{ url_for('admin_panel') }}">Admin</a>
-        <form method="post" action="{{ url_for('admin_logout') }}" class="inline-nav-form">
-          <button type="submit" class="link-button">Logout</button>
+      {% if current_user %}
+        <a href="{{ url_for('games') }}">Log Game</a>
+        {% if is_admin %}
+          <a href="{{ url_for('admin_panel') }}">Admin</a>
+        {% endif %}
+        <span class="nav-user">{{ current_user.username }}</span>
+        <form method="post" action="{{ url_for('logout') }}" class="inline-nav-form">
+          <button type="submit" class="link-button">Log Out</button>
         </form>
       {% else %}
-        <a href="{{ url_for('admin_login') }}">Admin Login</a>
+        <a href="{{ url_for('login') }}">Log In</a>
+        <a href="{{ url_for('register') }}">Register</a>
       {% endif %}
     </nav>
   </header>

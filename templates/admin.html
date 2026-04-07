@@ -2,7 +2,91 @@
 {% block content %}
 <section class="panel">
   <h2>Admin</h2>
-  <p>Manage players and remove bad game entries.</p>
+  <p>Manage users, players, and game records.</p>
+</section>
+
+<section class="panel">
+  <h3>Users</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Linked Player</th>
+        <th>Link Player</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td>{{ user.username }}</td>
+        <td>{{ "Admin" if user.is_admin else "User" }}</td>
+        <td>{{ user.player.name if user.player else "—" }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin_link_player', user_id=user.id) }}" class="inline-form">
+            <select name="player_id">
+              <option value="">— none —</option>
+              {% for p in players %}
+                <option value="{{ p.id }}" {% if user.player_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Save</button>
+          </form>
+        </td>
+        <td>
+          {% if user.is_admin %}
+            {% if user.id != current_user.id %}
+            <form method="post" action="{{ url_for('admin_demote_user', user_id=user.id) }}" class="inline-form">
+              <button type="submit">Demote</button>
+            </form>
+            {% endif %}
+          {% else %}
+            <form method="post" action="{{ url_for('admin_promote_user', user_id=user.id) }}" class="inline-form">
+              <button type="submit">Make Admin</button>
+            </form>
+          {% endif %}
+          {% if user.id != current_user.id %}
+          <form method="post" action="{{ url_for('admin_delete_user', user_id=user.id) }}" class="inline-form" onsubmit="return confirm('Delete user {{ user.username }}?');">
+            <button type="submit" class="danger">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No users yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h3>Invite Codes</h3>
+  <form method="post" action="{{ url_for('admin_generate_invite') }}" style="margin-bottom:1rem">
+    <button type="submit">Generate Invite Code</button>
+  </form>
+  <table>
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Created by</th>
+        <th>Created</th>
+        <th>Used by</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for invite in invites %}
+      <tr>
+        <td><code>{{ invite.code }}</code></td>
+        <td>{{ invite.created_by.username }}</td>
+        <td>{{ invite.created_at.strftime("%Y-%m-%d") }}</td>
+        <td>{{ invite.used_by.username if invite.used_by else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No invite codes yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
 
 <section class="panel">
