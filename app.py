@@ -176,8 +176,7 @@ def legal_pegging_plays(hand: list[str], current_count: int) -> list[str]:
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///cribbage.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SECRET_KEY"] = "change-this-secret-key"
-app.config["ADMIN_PASSWORD"] = os.environ.get("ADMIN_PASSWORD", "change-admin-password")
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key")
 db = SQLAlchemy(app)
 WINNING_SCORE = 121
 SKUNK_THRESHOLD = 90
