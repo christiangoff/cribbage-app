@@ -1298,6 +1298,7 @@ def play_discard(game_id: int):
 
 
 @app.route("/play/<int:game_id>/cut", methods=["POST"])
+@login_required
 def play_cut(game_id: int):
     lg = LiveGame.query.get_or_404(game_id)
     if lg.phase != "cutting":
@@ -1547,6 +1548,120 @@ def play_count(game_id: int):
     _advance_counting(lg)
     db.session.commit()
     return jsonify({"ok": True, "phase": lg.phase})
+
+
+# ── Kiosk & JSON API ─────────────────────────────────────────────────────────
+
+@app.route("/kiosk")
+def kiosk():
+    return render_template("kiosk.html")
+
+
+@app.route("/api/me")
+def api_me():
+    u = current_user()
+    if not u:
+        return jsonify({"error": "not_logged_in"}), 401
+    return jsonify({
+        "id": u.id,
+        "username": u.username,
+        "player_id": u.player_id,
+        "player_name": u.player.name if u.player else None,
+        "is_admin": u.is_admin,
+    })
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    user = User.query.filter_by(username=username).first()
+    if user and check_password_hash(user.password_hash, password):
+        session["user_id"] = user.id
+        return jsonify({
+            "ok": True,
+            "id": user.id,
+            "username": user.username,
+            "player_id": user.player_id,
+            "player_name": user.player.name if user.player else None,
+        })
+    return jsonify({"error": "Invalid username or password"}), 401
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.pop("user_id", None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/lobby")
+def api_lobby():
+    u = current_user()
+    if not u:
+        return jsonify({"error": "not_logged_in"}), 401
+    me_id = u.player_id
+    open_games = []
+    my_games = []
+    if me_id:
+        for g in LiveGame.query.filter_by(player2_id=None, phase="lobby").order_by(LiveGame.created_at.desc()).all():
+            if g.player1_id != me_id:
+                open_games.append({"id": g.id, "creator": g.player1.name})
+        for g in LiveGame.query.filter(
+            ((LiveGame.player1_id == me_id) | (LiveGame.player2_id == me_id)),
+            LiveGame.phase != "complete",
+        ).order_by(LiveGame.created_at.desc()).all():
+            opp = g.player2 if g.player2_id != me_id else g.player1
+            my_games.append({
+                "id": g.id,
+                "phase": g.phase,
+                "opponent": opp.name if opp and opp.id != me_id else None,
+                "waiting": g.player2_id is None,
+            })
+    return jsonify({"player_id": me_id, "open_games": open_games, "my_games": my_games})
+
+
+@app.route("/api/games/new", methods=["POST"])
+def api_new_game():
+    u = current_user()
+    if not u:
+        return jsonify({"error": "not_logged_in"}), 401
+    if not u.player_id:
+        return jsonify({"error": "no_player_linked"}), 400
+    lg = LiveGame(player1_id=u.player_id, phase="lobby")
+    db.session.add(lg)
+    db.session.commit()
+    return jsonify({"ok": True, "game_id": lg.id})
+
+
+@app.route("/api/games/<int:game_id>/join", methods=["POST"])
+def api_join_game(game_id: int):
+    u = current_user()
+    if not u:
+        return jsonify({"error": "not_logged_in"}), 401
+    if not u.player_id:
+        return jsonify({"error": "no_player_linked"}), 400
+    me_id = u.player_id
+    lg = LiveGame.query.get_or_404(game_id)
+    if lg.player2_id is not None:
+        return jsonify({"error": "Game already full"}), 400
+    if lg.player1_id == me_id:
+        return jsonify({"error": "Cannot join your own game"}), 400
+    lg.player2_id = me_id
+    lg.dealer_id = random.choice([lg.player1_id, lg.player2_id])
+    lg.first_dealer_id = lg.dealer_id
+    deck = new_deck()
+    p1_hand, p2_hand, remaining = deal_hands(deck)
+    state = {
+        "p1_hand": p1_hand, "p2_hand": p2_hand, "crib": [],
+        "starter": None, "p1_discarded": False, "p2_discarded": False,
+        "deck": remaining, "pegging": None, "counting_subphase": None,
+        "events": ["Game started! Discard 2 cards to the crib."],
+    }
+    lg.set_state(state)
+    lg.phase = "discarding"
+    db.session.commit()
+    return jsonify({"ok": True, "game_id": game_id})
 
 
 @app.cli.command("init-db")
