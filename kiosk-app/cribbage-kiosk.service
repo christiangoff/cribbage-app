@@ -1,0 +1,16 @@
+[Unit]
+Description=Cribbage Kiosk Touchscreen App
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+WorkingDirectory=/home/pi/cribbage-app/kiosk-app
+ExecStart=/home/pi/cribbage-app/kiosk-app/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

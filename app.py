@@ -9,6 +9,7 @@ import secrets
 from itertools import combinations
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from sqlalchemy import CheckConstraint, inspect, text
@@ -177,6 +178,10 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///cribbage.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key")
+
+# Allow kiosk app (running as a local file or different origin) to use the API
+CORS(app, resources={r"/api/*": {"origins": "*"}, r"/play/*": {"origins": "*"}},
+     supports_credentials=True)
 db = SQLAlchemy(app)
 WINNING_SCORE = 121
 SKUNK_THRESHOLD = 90
