@@ -179,6 +179,13 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///cribbage.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key")
 
+# When running behind HTTPS, cookies must be Secure + SameSite=None so the
+# kiosk app (a different origin) can include them in cross-origin requests.
+if os.environ.get("HTTPS") == "1":
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "None"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+
 # Allow kiosk app (running as a local file or different origin) to use the API
 CORS(app, resources={r"/api/*": {"origins": "*"}, r"/play/*": {"origins": "*"}},
      supports_credentials=True)
