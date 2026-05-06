@@ -14,6 +14,7 @@
         <th>Role</th>
         <th>Linked Player</th>
         <th>Link Player</th>
+        <th>Reset Password</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -32,6 +33,12 @@
               {% endfor %}
             </select>
             <button type="submit">Save</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('admin_reset_password', user_id=user.id) }}" class="inline-form" onsubmit="return confirm('Reset password for {{ user.username }}?');">
+            <input name="new_password" type="password" placeholder="New password" minlength="6" required style="width:130px">
+            <button type="submit">Reset</button>
           </form>
         </td>
         <td>
@@ -54,7 +61,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No users yet.</td></tr>
+      <tr><td colspan="6">No users yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

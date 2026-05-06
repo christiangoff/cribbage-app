@@ -1003,6 +1003,42 @@ def admin_delete_user(user_id: int):
     return redirect(url_for("admin_panel"))
 
 
+@app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
+@admin_required
+def admin_reset_password(user_id: int):
+    user = User.query.get_or_404(user_id)
+    new_password = request.form.get("new_password", "").strip()
+    if len(new_password) < 6:
+        flash("Password must be at least 6 characters.", "error")
+        return redirect(url_for("admin_panel"))
+    user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
+    db.session.commit()
+    flash(f"Password reset for {user.username}.", "success")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/account", methods=["GET", "POST"])
+@login_required
+def account():
+    user = current_user()
+    if request.method == "POST":
+        current_pw = request.form.get("current_password", "")
+        new_pw = request.form.get("new_password", "").strip()
+        confirm_pw = request.form.get("confirm_password", "").strip()
+        if not check_password_hash(user.password_hash, current_pw):
+            flash("Current password is incorrect.", "error")
+        elif len(new_pw) < 6:
+            flash("New password must be at least 6 characters.", "error")
+        elif new_pw != confirm_pw:
+            flash("New passwords do not match.", "error")
+        else:
+            user.password_hash = generate_password_hash(new_pw, method="pbkdf2:sha256")
+            db.session.commit()
+            flash("Password updated successfully.", "success")
+        return redirect(url_for("account"))
+    return render_template("account.html")
+
+
 # ── Live game helpers ─────────────────────────────────────────────────────────
 
 def _live_player_id() -> int | None:

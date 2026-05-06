@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Account Settings</h2>
+  <p>Logged in as <strong>{{ current_user.username }}</strong></p>
+</section>
+
+<section class="panel">
+  <h3>Change Password</h3>
+  <form method="post" action="{{ url_for('account') }}" class="form-grid narrow-form">
+    <label for="current_password">Current Password</label>
+    <input id="current_password" name="current_password" type="password" required>
+    <label for="new_password">New Password</label>
+    <input id="new_password" name="new_password" type="password" minlength="6" required>
+    <label for="confirm_password">Confirm New Password</label>
+    <input id="confirm_password" name="confirm_password" type="password" minlength="6" required>
+    <button type="submit">Update Password</button>
+  </form>
+</section>
+{% endblock %}

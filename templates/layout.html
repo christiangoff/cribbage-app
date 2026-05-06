@@ -19,7 +19,7 @@
         {% if is_admin %}
           <a href="{{ url_for('admin_panel') }}">Admin</a>
         {% endif %}
-        <span class="nav-user">{{ current_user.username }}</span>
+        <a href="{{ url_for('account') }}">{{ current_user.username }}</a>
         <form method="post" action="{{ url_for('logout') }}" class="inline-nav-form">
           <button type="submit" class="link-button">Log Out</button>
         </form>
