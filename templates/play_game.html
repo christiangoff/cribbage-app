@@ -1,21 +1,31 @@
 {% extends "layout.html" %}
 {% block content %}
 <div id="game-root">
+
+  <!-- Score header -->
   <div class="play-header">
     <h2>Live Game #{{ game.id }}</h2>
     <div class="play-scores">
-      <div class="score-box" id="score-p1">
+      <div class="score-box player-red" id="score-p1">
+        <span class="player-dot"></span>
         <span class="score-name" id="name-p1">{{ game.player1.name }}</span>
         <span class="score-num" id="pts-p1">{{ game.player1_score }}</span>
       </div>
-      <div class="score-box" id="score-p2">
+      <div class="score-box player-blue" id="score-p2">
+        <span class="player-dot"></span>
         <span class="score-name" id="name-p2">{% if game.player2 %}{{ game.player2.name }}{% else %}Waiting…{% endif %}</span>
         <span class="score-num" id="pts-p2">{{ game.player2_score }}</span>
       </div>
     </div>
   </div>
 
+  <!-- Peg board -->
   <div class="panel">
+    <div class="peg-legend">
+      <span class="peg-legend-dot red"></span><span id="legend-p1">{{ game.player1.name }}</span>
+      &nbsp;&nbsp;
+      <span class="peg-legend-dot blue"></span><span id="legend-p2">{% if game.player2 %}{{ game.player2.name }}{% else %}—{% endif %}</span>
+    </div>
     <div class="peg-board" id="peg-board">
       {% for i in range(121) %}
       <div class="peg-hole" id="hole-{{ i }}">
@@ -26,27 +36,53 @@
     </div>
   </div>
 
+  <!-- Status -->
   <div class="panel" id="status-panel">
     <p id="status-msg">Loading…</p>
     <div id="status-actions"></div>
   </div>
 
+  <!-- Cut card -->
   <div class="panel" id="starter-panel" style="display:none">
     <strong>Cut Card:</strong> <span id="starter-card"></span>
   </div>
 
-  <div class="panel" id="peg-area" style="display:none">
-    <h4>Pegging — count: <span id="peg-count">0</span></h4>
-    <div id="peg-pile" style="margin-bottom:0.5rem"></div>
-    <div><strong>Opponent's cards:</strong> <span id="opp-hand-cards"></span></div>
+  <!-- Counting summary (shown all at once) -->
+  <div class="panel" id="counting-panel" style="display:none">
+    <h3>Hand Scores</h3>
+    <div id="counting-summary"></div>
+    <div style="margin-top:1rem">
+      <button id="counting-continue-btn">Continue to Next Hand</button>
+    </div>
   </div>
 
+  <!-- Pegging area: opponent / pile / my hand -->
+  <div id="peg-game-area" style="display:none">
+    <div class="panel peg-section" id="peg-opponent-section">
+      <div class="peg-section-label" id="opp-section-label">Opponent</div>
+      <div id="opp-hand-cards" class="card-row"></div>
+    </div>
+    <div class="panel peg-pile-section">
+      <div class="peg-pile-header">
+        Play Area &nbsp;·&nbsp; Count: <strong id="peg-count">0</strong>
+      </div>
+      <div id="peg-pile" class="card-row"></div>
+    </div>
+    <div class="panel peg-section" id="peg-my-section">
+      <div class="peg-section-label">Your hand</div>
+      <div id="peg-hand-cards" class="card-row"></div>
+      <div id="peg-hand-actions" style="margin-top:0.6rem"></div>
+    </div>
+  </div>
+
+  <!-- Discard / counting hand panel -->
   <div class="panel" id="hand-panel" style="display:none">
     <h4 id="hand-label">Your hand</h4>
     <div id="hand-cards" class="card-row"></div>
     <div id="hand-actions" style="margin-top:0.75rem"></div>
   </div>
 
+  <!-- Event log -->
   <div class="panel">
     <h4>Events</h4>
     <ul id="event-log" style="margin:0;padding-left:1.2rem;font-size:0.9rem"></ul>
@@ -62,29 +98,37 @@ const POLL_MS = 2000;
 
 let myPlayerId = null;
 let selectedDiscard = [];
+let heldCardIndex = null;   // for reordering
+let localHand = null;       // local reordering state
+let lastHandSig = '';       // detect new deal
 let lastPhase = null;
 let polling = true;
+
+// ── Card rendering ────────────────────────────────────────────────────
 
 function rankVal(card) {
   const r = card.slice(0, -1);
   return ['T','J','Q','K'].includes(r) ? 10 : r === 'A' ? 1 : parseInt(r);
 }
 
-function cardHtml(card, clickable, selected) {
+function cardHtml(card, clickable, selected, held) {
   const r = card.slice(0,-1), s = card.slice(-1);
   const red = s==='H'||s==='D';
-  const suitSym = SUIT_SYM[s];
-  const cls = ['card', red?'red':'black', selected?'selected':'', clickable?'clickable':''].filter(Boolean).join(' ');
+  const cls = ['card', red?'red':'black',
+    selected?'selected':'', held?'held':'', clickable?'clickable':'']
+    .filter(Boolean).join(' ');
   return `<span class="${cls}" data-card="${card}">
-    <span class="card-corner card-tl">${r}<br>${suitSym}</span>
-    <span class="card-center">${suitSym}</span>
-    <span class="card-corner card-br">${r}<br>${suitSym}</span>
+    <span class="card-corner card-tl">${r}<br>${SUIT_SYM[s]}</span>
+    <span class="card-center">${SUIT_SYM[s]}</span>
+    <span class="card-corner card-br">${r}<br>${SUIT_SYM[s]}</span>
   </span>`;
 }
 
 function cardBack() {
   return '<span class="card card-back"><span class="card-back-inner">🂠</span></span>';
 }
+
+// ── Peg board ─────────────────────────────────────────────────────────
 
 function updatePegBoard(s1, s2) {
   for (let i=0; i<=120; i++) {
@@ -93,15 +137,32 @@ function updatePegBoard(s1, s2) {
   }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────
+
 function setText(id, t) { const el=document.getElementById(id); if(el) el.textContent=t; }
 function show(id) { const el=document.getElementById(id); if(el) el.style.display=''; }
 function hide(id) { const el=document.getElementById(id); if(el) el.style.display='none'; }
 
 function setTurnIndicator(myTurn) {
   const panel = document.getElementById('status-panel');
-  panel.classList.toggle('your-turn', myTurn);
+  panel.classList.toggle('your-turn', !!myTurn);
   panel.classList.toggle('their-turn', !myTurn && myPlayerId !== null);
 }
+
+// ── Local hand ordering ───────────────────────────────────────────────
+
+function getDisplayHand(serverHand) {
+  const sig = (serverHand||[]).slice().sort().join(',');
+  if (sig !== lastHandSig) {
+    lastHandSig = sig;
+    localHand = [...serverHand];
+    heldCardIndex = null;
+    selectedDiscard = [];
+  }
+  return localHand || serverHand;
+}
+
+// ── Render ────────────────────────────────────────────────────────────
 
 function render(data) {
   myPlayerId = data.my_player_id;
@@ -110,21 +171,23 @@ function render(data) {
   setText('name-p2', data.player2_name || 'Waiting…');
   setText('pts-p1', data.player1_score);
   setText('pts-p2', data.player2_score);
+  setText('legend-p1', data.player1_name);
+  setText('legend-p2', data.player2_name || '—');
   updatePegBoard(data.player1_score, data.player2_score);
 
-  // Highlight active score box
+  // Score box active glow during pegging
   document.getElementById('score-p1').classList.toggle('score-box--active',
-    data.phase === 'pegging' && data.pegging && data.pegging.turn_player_id === data.player1_id);
+    data.phase==='pegging' && data.pegging && data.pegging.turn_player_id===data.player1_id);
   document.getElementById('score-p2').classList.toggle('score-box--active',
-    data.phase === 'pegging' && data.pegging && data.pegging.turn_player_id === data.player2_id);
+    data.phase==='pegging' && data.pegging && data.pegging.turn_player_id===data.player2_id);
 
   // Events
-  const events = (data.events||[]).slice().reverse();
-  document.getElementById('event-log').innerHTML = events.map(e=>`<li>${e}</li>`).join('');
+  document.getElementById('event-log').innerHTML =
+    (data.events||[]).slice().reverse().map(e=>`<li>${e}</li>`).join('');
 
   // Cut card
   if (data.starter) {
-    document.getElementById('starter-card').innerHTML = cardHtml(data.starter, false, false);
+    document.getElementById('starter-card').innerHTML = cardHtml(data.starter,false,false);
     show('starter-panel');
   } else {
     hide('starter-panel');
@@ -134,55 +197,54 @@ function render(data) {
   const myRole = data.my_role;
   const statusMsg = document.getElementById('status-msg');
   const statusActions = document.getElementById('status-actions');
-  const dealerLabel = data.dealer_name ? ` | Dealer: ${data.dealer_name}` : '';
+  const dealerLabel = data.dealer_name ? ` · Dealer: ${data.dealer_name}` : '';
 
   if (phase !== lastPhase) {
     statusActions.innerHTML = '';
-    selectedDiscard = [];
+    if (phase !== 'discarding') selectedDiscard = [];
     lastPhase = phase;
   }
 
   setTurnIndicator(false);
+  hide('hand-panel'); hide('peg-game-area'); hide('counting-panel');
 
+  // ── Lobby ──
   if (phase === 'lobby') {
     statusMsg.textContent = 'Waiting for opponent to join…';
-    hide('hand-panel'); hide('peg-area');
     return;
   }
 
+  // ── Complete ──
   if (phase === 'complete') {
     const wName = data.player1_score >= 121 ? data.player1_name : data.player2_name;
     statusMsg.innerHTML = `<strong>Game over! ${wName} wins!</strong>`;
-    hide('hand-panel'); hide('peg-area');
     polling = false;
     return;
   }
 
   if (!myRole) {
     statusMsg.textContent = 'You are a spectator.';
-    hide('hand-panel'); hide('peg-area');
     return;
   }
 
+  // ── Discarding ──
   if (phase === 'discarding') {
-    hide('peg-area');
     show('hand-panel');
     document.getElementById('hand-label').textContent = 'Your hand — discard 2 to the crib';
     const myDiscarded = myRole==='p1' ? data.p1_discarded : data.p2_discarded;
     if (myDiscarded) {
-      selectedDiscard = [];
       statusMsg.textContent = 'Waiting for opponent to discard…' + dealerLabel;
-      document.getElementById('hand-cards').innerHTML = data.my_hand.map(c=>cardHtml(c,false,false)).join('');
+      document.getElementById('hand-cards').innerHTML =
+        getDisplayHand(data.my_hand).map(c=>cardHtml(c,false,false)).join('');
       document.getElementById('hand-actions').innerHTML = '';
     } else {
       setTurnIndicator(true);
-      statusMsg.textContent = 'Your turn: discard 2 cards to the crib.' + dealerLabel;
-      if (selectedDiscard.length === 0) {
-        renderDiscardHand(data.my_hand);
-      }
+      statusMsg.textContent = 'Discard 2 cards to the crib.' + dealerLabel;
+      renderDiscardHand(data.my_hand);
     }
+
+  // ── Cutting ──
   } else if (phase === 'cutting') {
-    hide('peg-area'); hide('hand-panel');
     const isNonDealer = myPlayerId !== data.dealer_id;
     if (isNonDealer) {
       setTurnIndicator(true);
@@ -190,12 +252,12 @@ function render(data) {
       if (!statusActions.querySelector('.cut-cards')) {
         const container = document.createElement('div');
         container.className = 'cut-cards card-row';
-        for (let i = 0; i < 8; i++) {
+        for (let i=0; i<8; i++) {
           const el = document.createElement('span');
           el.className = 'card card-back clickable';
           el.innerHTML = '<span class="card-back-inner">🂠</span>';
           el.onclick = () => {
-            container.querySelectorAll('.card').forEach(c => c.style.pointerEvents = 'none');
+            container.querySelectorAll('.card').forEach(c=>c.style.pointerEvents='none');
             el.classList.add('selected');
             post('/cut').then(poll);
           };
@@ -206,89 +268,135 @@ function render(data) {
     } else {
       statusMsg.textContent = 'Waiting for opponent to cut the deck…' + dealerLabel;
     }
+
+  // ── Pegging ──
   } else if (phase === 'pegging') {
-    show('peg-area'); show('hand-panel');
-    document.getElementById('hand-label').textContent = 'Your hand';
+    show('peg-game-area');
     const peg = data.pegging||{};
     const isMyTurn = peg.turn_player_id === myPlayerId;
     setTurnIndicator(isMyTurn);
-    statusMsg.textContent = isMyTurn ? '🟢 Your turn to peg!' + dealerLabel : 'Waiting for opponent…' + dealerLabel;
+    statusMsg.textContent = isMyTurn ? '🟢 Your turn to peg!' + dealerLabel : 'Opponent\'s turn…' + dealerLabel;
+
+    // Opponent section label
+    const oppName = myRole==='p1' ? data.player2_name : data.player1_name;
+    setText('opp-section-label', `${oppName} (${data.opp_hand_count} card${data.opp_hand_count!==1?'s':''})`);
+
     document.getElementById('peg-count').textContent = peg.count||0;
     document.getElementById('peg-pile').innerHTML = (peg.pile||[]).map(c=>cardHtml(c,false,false)).join('');
     document.getElementById('opp-hand-cards').innerHTML = Array(data.opp_hand_count).fill(cardBack()).join('');
     renderPeggingHand(data.my_hand, peg.count||0, isMyTurn);
+
+  // ── Counting ──
   } else if (phase === 'counting') {
-    hide('peg-area'); show('hand-panel');
-    const sub = data.counting_subphase||'';
-    const p1Name = data.player1_name, p2Name = data.player2_name;
+    show('counting-panel');
+    statusMsg.textContent = 'Scoring hands…' + dealerLabel;
 
+    const cs = data.counting_scores || {};
+    const starter = data.starter;
     const p1IsDealer = data.dealer_id === data.player1_id;
-    let countingHand, handOwner;
-    if (sub === 'p2_hand') {
-      countingHand = data.counting_p2_hand || [];
-      handOwner = p2Name + (p1IsDealer ? ' (non-dealer)' : ' (dealer)');
-    } else if (sub === 'p1_hand') {
-      countingHand = data.counting_p1_hand || [];
-      handOwner = p1Name + (p1IsDealer ? ' (dealer)' : ' (non-dealer)');
-    } else {
-      countingHand = data.counting_crib || [];
-      handOwner = 'Crib (' + data.dealer_name + ')';
-    }
 
-    setTurnIndicator(true);
-    statusMsg.textContent = `Scoring: ${handOwner}${dealerLabel}`;
-    document.getElementById('hand-label').textContent = handOwner;
-    document.getElementById('hand-cards').innerHTML = countingHand.map(c=>cardHtml(c,false,false)).join('');
-    document.getElementById('hand-actions').innerHTML = '';
+    const rows = [
+      {
+        label: data.player2_name + (p1IsDealer ? ' (non-dealer)' : ' (dealer)'),
+        data: cs.p2
+      },
+      {
+        label: data.player1_name + (p1IsDealer ? ' (dealer)' : ' (non-dealer)'),
+        data: cs.p1
+      },
+      {
+        label: `Crib (${data.dealer_name})`,
+        data: cs.crib
+      },
+    ];
 
-    if (!statusActions.querySelector('#count-btn')) {
-      const btn = document.createElement('button');
-      btn.id = 'count-btn'; btn.textContent = 'Score & Continue';
-      btn.onclick = () => { btn.disabled=true; post('/count').then(poll); };
-      statusActions.appendChild(btn);
-    } else {
-      statusActions.querySelector('#count-btn').disabled = false;
-    }
-  } else {
-    statusMsg.textContent = `Phase: ${phase}`;
+    const starterHtml = starter ? `<span style="font-size:0.85rem;color:#555">Cut: ${cardHtml(starter,false,false)}</span>` : '';
+
+    document.getElementById('counting-summary').innerHTML = rows.map(row => {
+      if (!row.data) return '';
+      const handHtml = row.data.hand.map(c=>cardHtml(c,false,false)).join('');
+      const reasons = row.data.reasons.length ? row.data.reasons.join(', ') : 'nothing';
+      return `<div class="counting-row">
+        <div class="counting-row-header">
+          <strong>${row.label}</strong>
+          <span class="counting-pts">${row.data.pts} pts</span>
+        </div>
+        <div class="card-row" style="margin:0.4rem 0">${handHtml} ${starterHtml}</div>
+        <div class="counting-reasons">${reasons}</div>
+      </div>`;
+    }).join('');
+
+    const btn = document.getElementById('counting-continue-btn');
+    btn.disabled = false;
+    btn.onclick = () => { btn.disabled=true; post('/count').then(poll); };
   }
 }
 
-function renderDiscardHand(hand) {
-  selectedDiscard = [];
+// ── Discard hand ──────────────────────────────────────────────────────
+
+function renderDiscardHand(serverHand) {
+  const hand = getDisplayHand(serverHand);
   const handCards = document.getElementById('hand-cards');
   const handActions = document.getElementById('hand-actions');
-  handCards.innerHTML = hand.map(c=>cardHtml(c,true,false)).join('');
-  handActions.innerHTML = '';
+
+  handCards.innerHTML = hand.map((c,i) =>
+    cardHtml(c, true, selectedDiscard.includes(i), heldCardIndex===i)
+  ).join('');
+  handActions.innerHTML = selectedDiscard.length===2
+    ? '<button id="discard-btn">Discard Selected</button>' : '';
 
   handCards.querySelectorAll('.card').forEach((el, i) => {
     el.addEventListener('click', () => {
+      if (heldCardIndex !== null && heldCardIndex !== i) {
+        // Swap for reordering
+        [localHand[heldCardIndex], localHand[i]] = [localHand[i], localHand[heldCardIndex]];
+        // Remap selectedDiscard indices after swap
+        selectedDiscard = selectedDiscard.map(idx => {
+          if (idx === heldCardIndex) return i;
+          if (idx === i) return heldCardIndex;
+          return idx;
+        });
+        heldCardIndex = null;
+        renderDiscardHand(serverHand);
+        return;
+      }
+      if (heldCardIndex === i) {
+        heldCardIndex = null;
+        renderDiscardHand(serverHand);
+        return;
+      }
+      // Normal discard select / deselect
       if (selectedDiscard.includes(i)) {
         selectedDiscard = selectedDiscard.filter(x=>x!==i);
-        el.classList.remove('selected');
       } else if (selectedDiscard.length < 2) {
         selectedDiscard.push(i);
-        el.classList.add('selected');
       }
-      handActions.innerHTML = selectedDiscard.length===2
-        ? '<button id="discard-btn">Discard Selected</button>' : '';
-      if (selectedDiscard.length===2) {
-        document.getElementById('discard-btn').onclick = () => {
-          document.getElementById('discard-btn').disabled = true;
-          postJson('/discard', {indices: selectedDiscard}).then(poll);
-        };
-      }
+      renderDiscardHand(serverHand);
     });
   });
+
+  if (selectedDiscard.length===2) {
+    document.getElementById('discard-btn').onclick = () => {
+      // Map local indices back to server hand indices
+      const serverIndices = selectedDiscard.map(li => serverHand.indexOf(localHand[li]));
+      document.getElementById('discard-btn').disabled = true;
+      postJson('/discard', {indices: serverIndices}).then(poll);
+    };
+  }
 }
 
-function renderPeggingHand(hand, count, isMyTurn) {
-  const handCards = document.getElementById('hand-cards');
-  const handActions = document.getElementById('hand-actions');
+// ── Pegging hand ──────────────────────────────────────────────────────
+
+function renderPeggingHand(serverHand, count, isMyTurn) {
+  const hand = getDisplayHand(serverHand);
+  const handCards = document.getElementById('peg-hand-cards');
+  const handActions = document.getElementById('peg-hand-actions');
   const hasLegal = hand.some(c => rankVal(c)+count <= 31);
-  handCards.innerHTML = hand.map(c => {
+
+  handCards.innerHTML = hand.map((c,i) => {
     const legal = rankVal(c)+count <= 31;
-    return cardHtml(c, isMyTurn && legal, false);
+    const isHeld = heldCardIndex === i;
+    return cardHtml(c, isMyTurn && legal, false, isHeld);
   }).join('');
   handActions.innerHTML = '';
 
@@ -299,17 +407,53 @@ function renderPeggingHand(hand, count, isMyTurn) {
       btn.onclick = () => { btn.disabled=true; post('/go').then(poll); };
       handActions.appendChild(btn);
     } else {
-      handCards.querySelectorAll('.card.clickable').forEach(el => {
+      handCards.querySelectorAll('.card').forEach((el, i) => {
         el.addEventListener('click', () => {
+          const card = el.dataset.card;
+          if (!el.classList.contains('clickable')) {
+            // Reorder: hold / swap
+            if (heldCardIndex === i) {
+              heldCardIndex = null;
+            } else if (heldCardIndex !== null) {
+              [localHand[heldCardIndex], localHand[i]] = [localHand[i], localHand[heldCardIndex]];
+              heldCardIndex = null;
+            } else {
+              heldCardIndex = i;
+            }
+            renderPeggingHand(serverHand, count, isMyTurn);
+            return;
+          }
+          // Play the card
           handCards.querySelectorAll('.card').forEach(e=>e.style.pointerEvents='none');
-          postJson('/peg', {card: el.dataset.card}).then(poll);
+          postJson('/peg', {card}).then(poll);
         });
       });
     }
+    // Allow reordering of non-legal cards too
+    handCards.querySelectorAll('.card:not(.clickable)').forEach((el, rawI) => {
+      // rawI doesn't map directly — use data-index
+    });
   } else {
     handActions.innerHTML = '<em>Waiting for opponent…</em>';
+    // Allow reordering while waiting
+    handCards.querySelectorAll('.card').forEach((el, i) => {
+      el.classList.add('clickable');
+      el.addEventListener('click', () => {
+        if (heldCardIndex === i) {
+          heldCardIndex = null;
+        } else if (heldCardIndex !== null) {
+          [localHand[heldCardIndex], localHand[i]] = [localHand[i], localHand[heldCardIndex]];
+          heldCardIndex = null;
+        } else {
+          heldCardIndex = i;
+        }
+        renderPeggingHand(serverHand, count, isMyTurn);
+      });
+    });
   }
 }
+
+// ── Network ───────────────────────────────────────────────────────────
 
 function post(path) {
   return fetch(`/play/${GAME_ID}${path}`, {method:'POST'}).then(r=>r.json());

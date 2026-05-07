@@ -515,11 +515,29 @@ tr.row-unranked td { color: #bbb; }
 }
 
 .card.clickable { cursor: pointer; }
+
+.card.clickable::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  right: 0;
+  height: 8px;
+}
+
 .card.clickable:hover {
-  transform: translateY(-5px);
+  transform: translateY(-6px);
   box-shadow: 2px 6px 10px rgba(0,0,0,0.2);
+  z-index: 5;
 }
 .card.clickable.selected:hover { transform: translateY(-8px); }
+
+.card.held {
+  transform: translateY(-8px);
+  outline: 3px solid #c4742a;
+  box-shadow: 2px 8px 14px rgba(196,116,42,0.35);
+  z-index: 6;
+}
 
 .card-back {
   background: linear-gradient(135deg, #244b5a 25%, #1a3a47 100%);
@@ -551,11 +569,117 @@ tr.row-unranked td { color: #bbb; }
   box-shadow: 0 0 0 3px rgba(59,125,61,0.25) !important;
 }
 
+/* ── Player color indicators ─────────────────────────────────────────── */
+
+.player-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.player-red .player-dot  { background: #c0392b; }
+.player-blue .player-dot { background: #2471a3; }
+
+.score-box {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 0.3rem;
+}
+
+.score-name { flex: 1; }
+.score-num  { width: 100%; text-align: center; }
+
+.peg-legend {
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.peg-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.peg-legend-dot.red  { background: #c0392b; }
+.peg-legend-dot.blue { background: #2471a3; }
+
+/* ── Pegging game area ───────────────────────────────────────────────── */
+
+#peg-game-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.peg-section {
+  padding: 0.75rem 1rem;
+}
+
+.peg-section-label {
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: var(--accent);
+  margin-bottom: 0.4rem;
+}
+
+.peg-pile-section {
+  background: #f0f4f6;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+.peg-pile-header {
+  font-size: 0.9rem;
+  margin-bottom: 0.4rem;
+  color: #444;
+}
+
+/* ── Cut cards ───────────────────────────────────────────────────────── */
+
 .cut-cards {
   margin-top: 0.5rem;
 }
 
-/* ── Cut card section ────────────────────────────────────────────────── */
+/* ── Counting summary ────────────────────────────────────────────────── */
+
+.counting-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+  background: #fafaf5;
+}
+
+.counting-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.counting-pts {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+.counting-reasons {
+  font-size: 0.82rem;
+  color: #666;
+  font-style: italic;
+  margin-top: 0.2rem;
+}
 
 /* Peg board */
 .peg-board {

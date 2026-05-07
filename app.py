@@ -1240,6 +1240,27 @@ def play_game(game_id: int):
     return render_template("play_game.html", game=lg, me_id=me_id, players=all_players)
 
 
+def _counting_scores_for_display(lg: "LiveGame", state: dict) -> dict:
+    """Pre-compute all hand scores for the counting summary display (read-only)."""
+    if lg.phase != "counting":
+        return {}
+    starter = state.get("starter")
+    if not starter:
+        return {}
+    peg = state.get("pegging") or {}
+    p1_hand = peg.get("p1_played", state.get("p1_hand", []))
+    p2_hand = peg.get("p2_played", state.get("p2_hand", []))
+    crib = state.get("crib", [])
+    p1_pts, p1_reasons = score_hand(p1_hand, starter, is_crib=False)
+    p2_pts, p2_reasons = score_hand(p2_hand, starter, is_crib=False)
+    crib_pts, crib_reasons = score_hand(crib, starter, is_crib=True)
+    return {
+        "p1": {"hand": p1_hand, "pts": p1_pts, "reasons": p1_reasons},
+        "p2": {"hand": p2_hand, "pts": p2_pts, "reasons": p2_reasons},
+        "crib": {"hand": crib, "pts": crib_pts, "reasons": crib_reasons},
+    }
+
+
 @app.route("/play/<int:game_id>/state")
 def play_state(game_id: int):
     lg = LiveGame.query.get_or_404(game_id)
@@ -1291,6 +1312,7 @@ def play_state(game_id: int):
         "counting_p1_hand": pegging.get("p1_played", []),
         "counting_p2_hand": pegging.get("p2_played", []),
         "counting_crib": state.get("crib", []),
+        "counting_scores": _counting_scores_for_display(lg, state),
         "events": state.get("events", [])[-5:],
         "p1_discarded": state.get("p1_discarded", False),
         "p2_discarded": state.get("p2_discarded", False),
@@ -1594,7 +1616,8 @@ def play_count(game_id: int):
     if me_id not in (lg.player1_id, lg.player2_id):
         return jsonify({"error": "Not a player"}), 403
 
-    _advance_counting(lg)
+    while lg.phase == "counting":
+        _advance_counting(lg)
     db.session.commit()
     return jsonify({"ok": True, "phase": lg.phase})
 
