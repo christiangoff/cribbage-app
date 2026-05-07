@@ -193,7 +193,7 @@ db = SQLAlchemy(app)
 WINNING_SCORE = 121
 SKUNK_THRESHOLD = 90
 DOUBLE_SKUNK_THRESHOLD = 60
-MIN_GAMES_FOR_CHAMPION = 1
+MIN_GAMES_FOR_CHAMPION = 3
 
 
 class Player(db.Model):
@@ -524,7 +524,7 @@ def index():
         "index.html",
         current_year=current_year,
         recent_games=recent_games,
-        ranked=ranked[:5],
+        ranked=[r for r in ranked if r.games > 0][:5],
         winner=winner,
     )
 
@@ -818,7 +818,7 @@ def stats():
 def leaderboard():
     year = request.args.get("year", type=int) or date.today().year
     ranked, winner = calculate_champion_scores(year)
-    return render_template("leaderboard.html", year=year, ranked=ranked, winner=winner)
+    return render_template("leaderboard.html", year=year, ranked=ranked, winner=winner, min_games=MIN_GAMES_FOR_CHAMPION)
 
 
 @app.route("/register", methods=["GET", "POST"])

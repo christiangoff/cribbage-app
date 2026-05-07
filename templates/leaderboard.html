@@ -33,18 +33,28 @@
     </thead>
     <tbody>
       {% for row in ranked %}
-      <tr>
-        <td>{{ loop.index }}</td>
+      <tr{% if row.games == 0 %} class="row-unranked"{% elif row.games < min_games %} class="row-provisional"{% endif %}>
+        <td>{% if row.games >= min_games %}{{ loop.index }}{% else %}—{% endif %}</td>
         <td>{{ row.player.name }}</td>
-        <td>{{ "%.2f"|format(row.champion_score) }}</td>
+        <td>
+          {% if row.games >= min_games %}
+            {{ "%.2f"|format(row.champion_score) }}
+          {% elif row.games > 0 %}
+            <span class="needs-games" title="Needs {{ min_games - row.games }} more game{{ 's' if min_games - row.games != 1 }}">
+              needs {{ min_games - row.games }} more
+            </span>
+          {% else %}
+            —
+          {% endif %}
+        </td>
         <td>{{ row.games }}</td>
         <td>{{ row.wins }}-{{ row.losses }}-{{ row.draws }}</td>
         <td>{{ row.first_cribs }}</td>
         <td>{{ row.skunks }}</td>
         <td>{{ row.double_skunks }}</td>
-        <td>{{ "%.1f"|format(row.win_rate * 100) }}%</td>
-        <td>{{ "%.2f"|format(row.avg_margin) }}</td>
-        <td>{{ row.point_diff }}</td>
+        <td>{% if row.games > 0 %}{{ "%.1f"|format(row.win_rate * 100) }}%{% else %}—{% endif %}</td>
+        <td>{% if row.games > 0 %}{{ "%.2f"|format(row.avg_margin) }}{% else %}—{% endif %}</td>
+        <td>{% if row.games > 0 %}{{ row.point_diff }}{% else %}—{% endif %}</td>
       </tr>
       {% else %}
       <tr><td colspan="11">No players or games found.</td></tr>

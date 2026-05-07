@@ -405,6 +405,17 @@ button.danger:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* Leaderboard rank states */
+tr.row-provisional td { color: #888; font-style: italic; }
+tr.row-unranked td { color: #bbb; }
+
+.needs-games {
+  font-size: 0.8rem;
+  color: #a07030;
+  font-style: italic;
+  white-space: nowrap;
+}
+
 .h2h-win  { background: #dff4df; font-weight: bold; }
 .h2h-loss { background: #f8dcdc; }
 .h2h-even { background: #fef9e7; }
