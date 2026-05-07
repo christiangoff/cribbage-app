@@ -3,7 +3,7 @@
 <section class="panel">
   <h2>{{ current_year }} Champion Forecast</h2>
   {% if winner %}
-    <p class="winner">Current projected winner: <strong>{{ winner.player.name }}</strong> ({{ "%.2f"|format(winner.champion_score) }})</p>
+    <p class="winner">Current projected winner: <strong><a href="{{ url_for('player_profile', player_id=winner.player.id) }}" class="player-link" style="color:inherit">{{ winner.player.name }}</a></strong> ({{ "%.2f"|format(winner.champion_score) }})</p>
   {% else %}
     <p>No games recorded for {{ current_year }} yet.</p>
   {% endif %}
@@ -26,7 +26,7 @@
     <tbody>
       {% for row in ranked %}
       <tr>
-        <td>{{ row.player.name }}</td>
+        <td><a href="{{ url_for('player_profile', player_id=row.player.id) }}" class="player-link">{{ row.player.name }}</a></td>
         <td>{{ "%.2f"|format(row.champion_score) }}</td>
         <td>{{ row.wins }}-{{ row.losses }}-{{ row.draws }}</td>
         <td>{{ row.skunks }}</td>
@@ -59,10 +59,11 @@
       {% for game in recent_games %}
       <tr>
         <td>{{ game.played_on }}</td>
-        <td>{{ game.winner.name if game.winner else "N/A" }}</td>
-        <td>{{ game.player2.name if game.winner_id == game.player1_id else game.player1.name }}</td>
+        <td>{% if game.winner %}<a href="{{ url_for('player_profile', player_id=game.winner.id) }}" class="player-link">{{ game.winner.name }}</a>{% else %}N/A{% endif %}</td>
+        {% set loser = game.player2 if game.winner_id == game.player1_id else game.player1 %}
+        <td><a href="{{ url_for('player_profile', player_id=loser.id) }}" class="player-link">{{ loser.name }}</a></td>
         <td>{{ game.winner_score }} - {{ game.loser_score }}</td>
-        <td>{{ game.first_crib.name if game.first_crib else "N/A" }}</td>
+        <td>{% if game.first_crib %}<a href="{{ url_for('player_profile', player_id=game.first_crib.id) }}" class="player-link">{{ game.first_crib.name }}</a>{% else %}N/A{% endif %}</td>
         <td>
           {% if game.is_double_skunk %}
             Double skunk

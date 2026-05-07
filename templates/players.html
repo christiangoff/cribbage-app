@@ -9,7 +9,7 @@
   <h3>Current Players</h3>
   <ul>
     {% for player in players %}
-      <li>{{ player.name }}</li>
+      <li><a href="{{ url_for('player_profile', player_id=player.id) }}" class="player-link">{{ player.name }}</a></li>
     {% else %}
       <li>No players added yet.</li>
     {% endfor %}

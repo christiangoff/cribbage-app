@@ -115,10 +115,11 @@
       {% for game in recent_games %}
       <tr>
         <td>{{ game.played_on }}</td>
-        <td>{{ game.winner.name if game.winner else "N/A" }}</td>
-        <td>{{ game.player2.name if game.winner_id == game.player1_id else game.player1.name }}</td>
+        <td>{% if game.winner %}<a href="{{ url_for('player_profile', player_id=game.winner.id) }}" class="player-link">{{ game.winner.name }}</a>{% else %}N/A{% endif %}</td>
+        {% set loser = game.player2 if game.winner_id == game.player1_id else game.player1 %}
+        <td><a href="{{ url_for('player_profile', player_id=loser.id) }}" class="player-link">{{ loser.name }}</a></td>
         <td>{{ game.winner_score }} - {{ game.loser_score }}</td>
-        <td>{{ game.first_crib.name if game.first_crib else "N/A" }}</td>
+        <td>{% if game.first_crib %}<a href="{{ url_for('player_profile', player_id=game.first_crib.id) }}" class="player-link">{{ game.first_crib.name }}</a>{% else %}N/A{% endif %}</td>
         <td>
           {% if game.is_double_skunk %}
             Double skunk

@@ -1,0 +1,270 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<section class="panel profile-hero">
+  <div class="profile-hero-top">
+    <h2 class="profile-name">{{ player.name }}</h2>
+    {% if all_time.games > 0 %}
+      <span class="profile-record">{{ all_time.wins }}W – {{ all_time.losses }}L all-time</span>
+    {% endif %}
+  </div>
+  <div class="profile-badges">
+    {% if streak >= 2 %}
+      <span class="badge badge--streak">🔥 {{ streak }}-game streak</span>
+    {% endif %}
+    {% if my_rank %}
+      <span class="badge badge--rank">#{{ my_rank }} in {{ year }}</span>
+    {% endif %}
+    {% if my_champion_score > 0 %}
+      <span class="badge badge--score">{{ "%.1f"|format(my_champion_score) }} champion pts</span>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-header-row">
+    <h3>{{ year }} Season</h3>
+    <form method="get" class="inline-form">
+      <input name="year" type="number" min="2000" max="2100" value="{{ year }}" style="width:90px">
+      <button type="submit">Go</button>
+    </form>
+  </div>
+  {% if this_year.games == 0 %}
+    <p class="empty-msg">No games recorded for {{ year }}.</p>
+  {% else %}
+  <div class="stat-cards">
+    <div class="stat-card stat-card--accent">
+      <div class="stat-number">{{ this_year.games }}</div>
+      <div class="stat-label">Games Played</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ this_year.wins }}–{{ this_year.losses }}</div>
+      <div class="stat-label">Win–Loss</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ "%.0f"|format(this_year.win_rate * 100) }}%</div>
+      <div class="stat-label">Win Rate</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ "%+.1f"|format(this_year.avg_margin) }}</div>
+      <div class="stat-label">Avg Margin</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ this_year.skunks }}</div>
+      <div class="stat-label">Skunks Dealt</div>
+    </div>
+    <div class="stat-card stat-card--streak">
+      <div class="stat-number">{{ this_year.double_skunks }}</div>
+      <div class="stat-label">Double Skunks</div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+{% if this_year.games > 0 %}
+<section class="panel">
+  <h3>{{ year }} Charts</h3>
+  <div class="chart-grid">
+    <div>
+      <div class="chart-sublabel">Monthly W/L</div>
+      <div class="chart-container">
+        <canvas id="monthlyChart"></canvas>
+      </div>
+    </div>
+    <div>
+      <div class="chart-sublabel">Running Win Rate</div>
+      <div class="chart-container">
+        <canvas id="winRateChart"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if h2h %}
+<section class="panel">
+  <h3>Head-to-Head (All Time)</h3>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Opponent</th>
+        <th>W</th>
+        <th>L</th>
+        <th>Games</th>
+        <th>Win Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in h2h %}
+      <tr>
+        <td><a href="{{ url_for('player_profile', player_id=row.player.id) }}" class="player-link">{{ row.player.name }}</a></td>
+        <td class="cell-win">{{ row.wins }}</td>
+        <td class="cell-loss">{{ row.losses }}</td>
+        <td>{{ row.games }}</td>
+        <td>
+          <div class="h2h-bar-row">
+            <span class="h2h-pct">{{ row.win_pct }}%</span>
+            <div class="h2h-bar">
+              <div class="h2h-bar-fill" style="width:{{ row.win_pct }}%"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h3>All-Time Stats</h3>
+  {% if all_time.games == 0 %}
+    <p class="empty-msg">No games recorded yet.</p>
+  {% else %}
+  <div class="stat-cards">
+    <div class="stat-card stat-card--accent">
+      <div class="stat-number">{{ all_time.games }}</div>
+      <div class="stat-label">Total Games</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ all_time.wins }}–{{ all_time.losses }}</div>
+      <div class="stat-label">Win–Loss</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ "%.0f"|format(all_time.win_rate * 100) }}%</div>
+      <div class="stat-label">Win Rate</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ "%+.1f"|format(all_time.avg_margin) }}</div>
+      <div class="stat-label">Avg Margin</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ all_time.skunks }}</div>
+      <div class="stat-label">Skunks Dealt</div>
+    </div>
+    <div class="stat-card stat-card--streak">
+      <div class="stat-number">{{ all_time.double_skunks }}</div>
+      <div class="stat-label">Double Skunks</div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h3>Recent Games</h3>
+  {% if not recent %}
+    <p class="empty-msg">No games recorded yet.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Opponent</th>
+        <th>Score</th>
+        <th>Result</th>
+        <th>Margin</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for game in recent %}
+        {% if game.player1_id == player.id %}
+          {% set my_score = game.player1_score %}
+          {% set opp = game.player2 %}
+          {% set opp_score = game.player2_score %}
+        {% else %}
+          {% set my_score = game.player2_score %}
+          {% set opp = game.player1 %}
+          {% set opp_score = game.player1_score %}
+        {% endif %}
+        {% set won = game.winner_id == player.id %}
+      <tr>
+        <td>{{ game.played_on }}</td>
+        <td><a href="{{ url_for('player_profile', player_id=opp.id) }}" class="player-link">{{ opp.name }}</a></td>
+        <td>{{ my_score }}–{{ opp_score }}</td>
+        <td>
+          {% if won %}
+            <span class="result-badge result-win">
+              {% if game.is_double_skunk %}Dbl Skunk{% elif game.is_skunk %}Skunk{% else %}Win{% endif %}
+            </span>
+          {% else %}
+            <span class="result-badge result-loss">Loss</span>
+          {% endif %}
+        </td>
+        <td class="{% if my_score > opp_score %}cell-win{% else %}cell-loss{% endif %}">
+          {{ "%+d"|format(my_score - opp_score) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+{% if this_year.games > 0 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: {
+    labels: MONTHS,
+    datasets: [
+      {
+        label: 'Wins',
+        data: {{ monthly_wins | tojson }},
+        backgroundColor: 'rgba(22,163,74,0.75)',
+        borderRadius: 4,
+      },
+      {
+        label: 'Losses',
+        data: {{ monthly_losses | tojson }},
+        backgroundColor: 'rgba(220,38,38,0.6)',
+        borderRadius: 4,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      x: { grid: { display: false } },
+      y: { ticks: { stepSize: 1 }, beginAtZero: true }
+    }
+  }
+});
+
+new Chart(document.getElementById('winRateChart'), {
+  type: 'line',
+  data: {
+    labels: {{ running_labels | tojson }},
+    datasets: [{
+      label: 'Win %',
+      data: {{ running_win_rate | tojson }},
+      borderColor: 'rgba(13,148,136,0.9)',
+      backgroundColor: 'rgba(13,148,136,0.1)',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { maxTicksLimit: 8 }, grid: { display: false } },
+      y: { min: 0, max: 100, ticks: { callback: v => v + '%' } }
+    }
+  }
+});
+</script>
+{% endif %}
+
+{% endblock %}

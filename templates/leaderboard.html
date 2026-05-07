@@ -9,7 +9,7 @@
   </form>
 
   {% if winner %}
-    <p class="winner">Model winner: <strong>{{ winner.player.name }}</strong> ({{ "%.2f"|format(winner.champion_score) }})</p>
+    <p class="winner">Model winner: <strong><a href="{{ url_for('player_profile', player_id=winner.player.id) }}" class="player-link" style="color:inherit">{{ winner.player.name }}</a></strong> ({{ "%.2f"|format(winner.champion_score) }})</p>
   {% else %}
     <p>No games recorded for {{ year }}.</p>
   {% endif %}
@@ -35,7 +35,7 @@
       {% for row in ranked %}
       <tr{% if row.games == 0 %} class="row-unranked"{% elif row.games < min_games %} class="row-provisional"{% endif %}>
         <td>{% if row.games >= min_games %}{{ loop.index }}{% else %}—{% endif %}</td>
-        <td>{{ row.player.name }}</td>
+        <td><a href="{{ url_for('player_profile', player_id=row.player.id) }}" class="player-link">{{ row.player.name }}</a></td>
         <td>
           {% if row.games >= min_games %}
             {{ "%.2f"|format(row.champion_score) }}

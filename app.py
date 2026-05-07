@@ -535,6 +535,122 @@ def players():
     return render_template("players.html", players=all_players)
 
 
+@app.route("/player/<int:player_id>")
+def player_profile(player_id: int):
+    player = Player.query.get_or_404(player_id)
+    year = request.args.get("year", type=int) or date.today().year
+
+    all_games = Game.query.filter(
+        (Game.player1_id == player_id) | (Game.player2_id == player_id)
+    ).order_by(Game.played_on.asc(), Game.created_at.asc()).all()
+
+    year_games = [g for g in all_games if g.played_on.year == year]
+
+    def _stats(games):
+        wins = losses = draws = skunks = double_skunks = first_cribs = 0
+        points_for = points_against = 0
+        margins = []
+        for g in games:
+            if g.player1_id == player_id:
+                pf, pa = g.player1_score, g.player2_score
+            else:
+                pf, pa = g.player2_score, g.player1_score
+            points_for += pf
+            points_against += pa
+            margins.append(pf - pa)
+            if g.winner_id is None:
+                draws += 1
+            elif g.winner_id == player_id:
+                wins += 1
+                if g.is_skunk:
+                    skunks += 1
+                if g.is_double_skunk:
+                    double_skunks += 1
+            else:
+                losses += 1
+            if g.first_crib_id == player_id:
+                first_cribs += 1
+        n = len(games)
+        decisive = wins + losses
+        return {
+            "games": n, "wins": wins, "losses": losses, "draws": draws,
+            "skunks": skunks, "double_skunks": double_skunks, "first_cribs": first_cribs,
+            "win_rate": wins / decisive if decisive else 0.0,
+            "avg_margin": sum(margins) / n if n else 0.0,
+            "point_diff": points_for - points_against,
+        }
+
+    all_time = _stats(all_games)
+    this_year = _stats(year_games)
+
+    # Current win streak
+    streak = 0
+    for g in sorted(all_games, key=lambda g: (g.played_on, g.created_at), reverse=True):
+        if g.winner_id == player_id:
+            streak += 1
+        elif g.winner_id is not None:
+            break
+
+    # Monthly wins/losses for current year
+    monthly_wins = [0] * 12
+    monthly_losses = [0] * 12
+    for g in year_games:
+        m = g.played_on.month - 1
+        if g.winner_id == player_id:
+            monthly_wins[m] += 1
+        elif g.winner_id is not None:
+            monthly_losses[m] += 1
+
+    # Running win rate across the year
+    running_labels: list[str] = []
+    running_win_rate: list[float] = []
+    rw = rg = 0
+    for g in sorted(year_games, key=lambda g: (g.played_on, g.created_at)):
+        rg += 1
+        if g.winner_id == player_id:
+            rw += 1
+        running_labels.append(g.played_on.strftime("%b %d"))
+        running_win_rate.append(round(rw / rg * 100, 1))
+
+    # Head-to-head all-time
+    all_opponents = Player.query.filter(Player.id != player_id).order_by(Player.name.asc()).all()
+    h2h = []
+    for opp in all_opponents:
+        opp_games = [g for g in all_games if g.player1_id == opp.id or g.player2_id == opp.id]
+        w = sum(1 for g in opp_games if g.winner_id == player_id)
+        l = sum(1 for g in opp_games if g.winner_id == opp.id)
+        if w + l > 0:
+            h2h.append({"player": opp, "wins": w, "losses": l, "games": w + l,
+                        "win_pct": round(w / (w + l) * 100)})
+    h2h.sort(key=lambda x: x["games"], reverse=True)
+
+    # Champion score for this year
+    ranked, _ = calculate_champion_scores(year)
+    my_rank = next((i + 1 for i, r in enumerate(ranked)
+                    if r.player.id == player_id and r.games >= MIN_GAMES_FOR_CHAMPION), None)
+    my_champion_score = next((r.champion_score for r in ranked if r.player.id == player_id), 0.0)
+
+    recent = sorted(all_games, key=lambda g: (g.played_on, g.created_at), reverse=True)[:15]
+
+    return render_template(
+        "player_profile.html",
+        player=player,
+        year=year,
+        all_time=all_time,
+        this_year=this_year,
+        streak=streak,
+        monthly_wins=monthly_wins,
+        monthly_losses=monthly_losses,
+        running_labels=running_labels,
+        running_win_rate=running_win_rate,
+        h2h=h2h,
+        my_rank=my_rank,
+        my_champion_score=my_champion_score,
+        recent=recent,
+        min_games=MIN_GAMES_FOR_CHAMPION,
+    )
+
+
 @app.route("/games", methods=["GET", "POST"])
 @login_required
 def games():
