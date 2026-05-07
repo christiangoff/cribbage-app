@@ -403,9 +403,17 @@ function render(data) {
       </div>`;
     }).join('');
 
+    const myReady = myRole==='p1' ? data.p1_counting_ready : data.p2_counting_ready;
+    const oppReady = myRole==='p1' ? data.p2_counting_ready : data.p1_counting_ready;
     const btn = document.getElementById('counting-continue-btn');
-    btn.disabled = false;
-    btn.onclick = () => { btn.disabled=true; post('/count').then(poll); };
+    if (myReady) {
+      btn.disabled = true;
+      btn.textContent = oppReady ? 'Advancing…' : 'Waiting for opponent…';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Continue to Next Hand';
+      btn.onclick = () => { btn.disabled=true; btn.textContent='Waiting for opponent…'; post('/count').then(poll); };
+    }
   }
 }
 

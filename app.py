@@ -1316,6 +1316,8 @@ def play_state(game_id: int):
         "events": state.get("events", [])[-5:],
         "p1_discarded": state.get("p1_discarded", False),
         "p2_discarded": state.get("p2_discarded", False),
+        "p1_counting_ready": state.get("p1_counting_ready", False),
+        "p2_counting_ready": state.get("p2_counting_ready", False),
         "winner_id": lg.winner_id,
     })
 
@@ -1608,7 +1610,6 @@ def play_delete(game_id: int):
 @app.route("/play/<int:game_id>/count", methods=["POST"])
 @login_required
 def play_count(game_id: int):
-    """Advance counting by one subphase (called by either player to trigger auto-scoring)."""
     lg = LiveGame.query.get_or_404(game_id)
     me_id = _live_player_id()
     if lg.phase != "counting":
@@ -1616,8 +1617,15 @@ def play_count(game_id: int):
     if me_id not in (lg.player1_id, lg.player2_id):
         return jsonify({"error": "Not a player"}), 403
 
-    while lg.phase == "counting":
-        _advance_counting(lg)
+    state = lg.get_state()
+    my_key = "p1_counting_ready" if me_id == lg.player1_id else "p2_counting_ready"
+    state[my_key] = True
+    lg.set_state(state)
+
+    if state.get("p1_counting_ready") and state.get("p2_counting_ready"):
+        while lg.phase == "counting":
+            _advance_counting(lg)
+
     db.session.commit()
     return jsonify({"ok": True, "phase": lg.phase})
 
