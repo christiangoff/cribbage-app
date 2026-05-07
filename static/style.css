@@ -460,25 +460,102 @@ tr.row-unranked td { color: #bbb; }
   color: var(--accent);
 }
 
-/* Card styles */
-.card {
-  display: inline-block;
-  border: 1px solid #888;
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 1.1rem;
-  background: #fff;
-  margin: 2px;
-  font-family: monospace;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+/* ── Cards ───────────────────────────────────────────────────────────── */
+
+.card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-end;
 }
 
-.card.red { color: #8f2d2d; }
-.card.black { color: #212121; }
-.card.selected { outline: 2px solid var(--accent); transform: translateY(-4px); }
+.card {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 54px;
+  height: 78px;
+  border: 1px solid #bbb;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 1px 2px 5px rgba(0,0,0,0.18);
+  font-family: "Georgia", serif;
+  font-size: 0.85rem;
+  padding: 3px 4px;
+  vertical-align: bottom;
+  transition: transform 0.12s, box-shadow 0.12s;
+  user-select: none;
+}
+
+.card.red { color: #c0392b; }
+.card.black { color: #1a1a1a; }
+
+.card-corner {
+  line-height: 1.1;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.card-tl { align-self: flex-start; }
+.card-br { align-self: flex-end; transform: rotate(180deg); }
+
+.card-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.card.selected {
+  outline: 3px solid var(--accent);
+  transform: translateY(-8px);
+  box-shadow: 2px 6px 12px rgba(36,75,90,0.3);
+}
+
 .card.clickable { cursor: pointer; }
-.card.clickable:hover { background: var(--accent-light); }
-.card-back { background: var(--accent); color: var(--accent); border-color: var(--accent); }
+.card.clickable:hover {
+  transform: translateY(-5px);
+  box-shadow: 2px 6px 10px rgba(0,0,0,0.2);
+}
+.card.clickable.selected:hover { transform: translateY(-8px); }
+
+.card-back {
+  background: linear-gradient(135deg, #244b5a 25%, #1a3a47 100%);
+  border-color: #1a3a47;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-back-inner {
+  font-size: 2rem;
+  color: rgba(255,255,255,0.15);
+}
+
+/* ── Turn indicator ──────────────────────────────────────────────────── */
+
+#status-panel.your-turn {
+  border-color: var(--ok);
+  background: #f0faf0;
+  box-shadow: 0 0 0 3px rgba(59,125,61,0.2), 0 2px 8px rgba(36,75,90,0.07);
+}
+
+#status-panel.their-turn {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+.score-box--active {
+  border-color: var(--ok) !important;
+  box-shadow: 0 0 0 3px rgba(59,125,61,0.25) !important;
+}
+
+.cut-cards {
+  margin-top: 0.5rem;
+}
+
+/* ── Cut card section ────────────────────────────────────────────────── */
 
 /* Peg board */
 .peg-board {

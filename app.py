@@ -1272,6 +1272,7 @@ def play_state(game_id: int):
     return jsonify({
         "phase": lg.phase,
         "my_role": my_role,
+        "my_player_id": me_id,
         "player1_name": p1.name if p1 else "",
         "player2_name": p2.name if p2 else "Waiting...",
         "player1_score": lg.player1_score,
