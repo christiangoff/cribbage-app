@@ -1487,11 +1487,10 @@ def play_peg(game_id: int):
         if _check_win(lg):
             db.session.commit()
             return jsonify({"ok": True, "phase": lg.phase})
-        # Move to counting
+        # Move to counting — play_count handles all subphases when both confirm
         state["counting_subphase"] = "p2_hand"
         lg.set_state(state)
         lg.phase = "counting"
-        _advance_counting(lg)
         db.session.commit()
         return jsonify({"ok": True, "phase": lg.phase})
 
