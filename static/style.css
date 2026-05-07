@@ -517,13 +517,9 @@ tr.row-unranked td { color: #bbb; }
 .card.clickable { cursor: pointer; }
 
 .card.clickable:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.22);
-  z-index: 5;
-}
-
-.card.clickable.selected:hover {
-  transform: scale(1.08);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 1px 3px 8px rgba(0,0,0,0.18);
+  background: #f0f6f9;
 }
 
 .card.card-dragging {
