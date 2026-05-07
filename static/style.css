@@ -532,11 +532,8 @@ tr.row-unranked td { color: #bbb; }
 }
 .card.clickable.selected:hover { transform: translateY(-8px); }
 
-.card.held {
-  transform: translateY(-8px);
-  outline: 3px solid #c4742a;
-  box-shadow: 2px 8px 14px rgba(196,116,42,0.35);
-  z-index: 6;
+.card.card-dragging {
+  opacity: 0.3;
 }
 
 .card-back {

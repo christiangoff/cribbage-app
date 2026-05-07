@@ -98,11 +98,89 @@ const POLL_MS = 2000;
 
 let myPlayerId = null;
 let selectedDiscard = [];
-let heldCardIndex = null;   // for reordering
-let localHand = null;       // local reordering state
-let lastHandSig = '';       // detect new deal
+let localHand = null;
+let lastHandSig = '';
 let lastPhase = null;
 let polling = true;
+
+// ── Drag to reorder ───────────────────────────────────────────────────
+
+let drag = null;
+
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!drag.started && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) {
+    drag.started = true;
+    const r = drag.card.getBoundingClientRect();
+    drag.ghost = drag.card.cloneNode(true);
+    Object.assign(drag.ghost.style, {
+      position:'fixed', pointerEvents:'none', zIndex:'999', opacity:'0.88',
+      width:r.width+'px', height:r.height+'px',
+      left:r.left+'px', top:r.top+'px', transition:'none', margin:'0',
+    });
+    document.body.appendChild(drag.ghost);
+    drag.card.classList.add('card-dragging');
+  }
+  if (drag.started && drag.ghost) {
+    drag.ghost.style.left = (e.clientX - drag.ox)+'px';
+    drag.ghost.style.top  = (e.clientY - drag.oy)+'px';
+  }
+});
+
+document.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const { card, fromIdx, container, started, ghost } = drag;
+  drag = null;
+  if (ghost) ghost.remove();
+  card.classList.remove('card-dragging');
+  if (!started) return;
+
+  // Suppress the click that fires after pointerup
+  window.addEventListener('click', ev => ev.stopPropagation(), { once:true, capture:true });
+
+  const cards = [...container.querySelectorAll('.card[data-card]')];
+  let toIdx = fromIdx;
+  for (let i = 0; i < cards.length; i++) {
+    const r = cards[i].getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX < r.right) { toIdx = i; break; }
+    if (i === cards.length - 1 && e.clientX >= r.right) toIdx = i;
+  }
+  if (toIdx !== fromIdx) {
+    const item = localHand.splice(fromIdx, 1)[0];
+    localHand.splice(toIdx, 0, item);
+    // Remap selectedDiscard indices
+    selectedDiscard = selectedDiscard.map(idx => {
+      if (idx === fromIdx) return toIdx;
+      if (fromIdx < toIdx && idx > fromIdx && idx <= toIdx) return idx - 1;
+      if (fromIdx > toIdx && idx >= toIdx && idx < fromIdx) return idx + 1;
+      return idx;
+    });
+    container._onReorder && container._onReorder();
+  }
+});
+
+document.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  if (drag.ghost) drag.ghost.remove();
+  drag.card.classList.remove('card-dragging');
+  drag = null;
+});
+
+function enableDrag(container, onReorder) {
+  container._onReorder = onReorder;
+  if (container._dragHandler) container.removeEventListener('pointerdown', container._dragHandler);
+  container._dragHandler = e => {
+    const card = e.target.closest('.card[data-card]');
+    if (!card || !container.contains(card)) return;
+    const cards = [...container.querySelectorAll('.card[data-card]')];
+    const fromIdx = cards.indexOf(card);
+    if (fromIdx < 0) return;
+    const r = card.getBoundingClientRect();
+    drag = { card, fromIdx, container, sx:e.clientX, sy:e.clientY,
+              ox:e.clientX-r.left, oy:e.clientY-r.top, started:false, ghost:null };
+  };
+  container.addEventListener('pointerdown', container._dragHandler);
+}
 
 // ── Card rendering ────────────────────────────────────────────────────
 
@@ -111,11 +189,11 @@ function rankVal(card) {
   return ['T','J','Q','K'].includes(r) ? 10 : r === 'A' ? 1 : parseInt(r);
 }
 
-function cardHtml(card, clickable, selected, held) {
+function cardHtml(card, clickable, selected) {
   const r = card.slice(0,-1), s = card.slice(-1);
   const red = s==='H'||s==='D';
   const cls = ['card', red?'red':'black',
-    selected?'selected':'', held?'held':'', clickable?'clickable':'']
+    selected?'selected':'', clickable?'clickable':'']
     .filter(Boolean).join(' ');
   return `<span class="${cls}" data-card="${card}">
     <span class="card-corner card-tl">${r}<br>${SUIT_SYM[s]}</span>
@@ -156,7 +234,6 @@ function getDisplayHand(serverHand) {
   if (sig !== lastHandSig) {
     lastHandSig = sig;
     localHand = [...serverHand];
-    heldCardIndex = null;
     selectedDiscard = [];
   }
   return localHand || serverHand;
@@ -340,32 +417,13 @@ function renderDiscardHand(serverHand) {
   const handActions = document.getElementById('hand-actions');
 
   handCards.innerHTML = hand.map((c,i) =>
-    cardHtml(c, true, selectedDiscard.includes(i), heldCardIndex===i)
+    cardHtml(c, true, selectedDiscard.includes(i))
   ).join('');
   handActions.innerHTML = selectedDiscard.length===2
     ? '<button id="discard-btn">Discard Selected</button>' : '';
 
   handCards.querySelectorAll('.card').forEach((el, i) => {
     el.addEventListener('click', () => {
-      if (heldCardIndex !== null && heldCardIndex !== i) {
-        // Swap for reordering
-        [localHand[heldCardIndex], localHand[i]] = [localHand[i], localHand[heldCardIndex]];
-        // Remap selectedDiscard indices after swap
-        selectedDiscard = selectedDiscard.map(idx => {
-          if (idx === heldCardIndex) return i;
-          if (idx === i) return heldCardIndex;
-          return idx;
-        });
-        heldCardIndex = null;
-        renderDiscardHand(serverHand);
-        return;
-      }
-      if (heldCardIndex === i) {
-        heldCardIndex = null;
-        renderDiscardHand(serverHand);
-        return;
-      }
-      // Normal discard select / deselect
       if (selectedDiscard.includes(i)) {
         selectedDiscard = selectedDiscard.filter(x=>x!==i);
       } else if (selectedDiscard.length < 2) {
@@ -375,9 +433,10 @@ function renderDiscardHand(serverHand) {
     });
   });
 
+  enableDrag(handCards, () => renderDiscardHand(serverHand));
+
   if (selectedDiscard.length===2) {
     document.getElementById('discard-btn').onclick = () => {
-      // Map local indices back to server hand indices
       const serverIndices = selectedDiscard.map(li => serverHand.indexOf(localHand[li]));
       document.getElementById('discard-btn').disabled = true;
       postJson('/discard', {indices: serverIndices}).then(poll);
@@ -393,12 +452,13 @@ function renderPeggingHand(serverHand, count, isMyTurn) {
   const handActions = document.getElementById('peg-hand-actions');
   const hasLegal = hand.some(c => rankVal(c)+count <= 31);
 
-  handCards.innerHTML = hand.map((c,i) => {
+  handCards.innerHTML = hand.map(c => {
     const legal = rankVal(c)+count <= 31;
-    const isHeld = heldCardIndex === i;
-    return cardHtml(c, isMyTurn && legal, false, isHeld);
+    return cardHtml(c, isMyTurn && legal, false);
   }).join('');
   handActions.innerHTML = '';
+
+  enableDrag(handCards, () => renderPeggingHand(serverHand, count, isMyTurn));
 
   if (isMyTurn) {
     if (!hasLegal) {
@@ -407,49 +467,15 @@ function renderPeggingHand(serverHand, count, isMyTurn) {
       btn.onclick = () => { btn.disabled=true; post('/go').then(poll); };
       handActions.appendChild(btn);
     } else {
-      handCards.querySelectorAll('.card').forEach((el, i) => {
+      handCards.querySelectorAll('.card.clickable').forEach(el => {
         el.addEventListener('click', () => {
-          const card = el.dataset.card;
-          if (!el.classList.contains('clickable')) {
-            // Reorder: hold / swap
-            if (heldCardIndex === i) {
-              heldCardIndex = null;
-            } else if (heldCardIndex !== null) {
-              [localHand[heldCardIndex], localHand[i]] = [localHand[i], localHand[heldCardIndex]];
-              heldCardIndex = null;
-            } else {
-              heldCardIndex = i;
-            }
-            renderPeggingHand(serverHand, count, isMyTurn);
-            return;
-          }
-          // Play the card
           handCards.querySelectorAll('.card').forEach(e=>e.style.pointerEvents='none');
-          postJson('/peg', {card}).then(poll);
+          postJson('/peg', {card: el.dataset.card}).then(poll);
         });
       });
     }
-    // Allow reordering of non-legal cards too
-    handCards.querySelectorAll('.card:not(.clickable)').forEach((el, rawI) => {
-      // rawI doesn't map directly — use data-index
-    });
   } else {
     handActions.innerHTML = '<em>Waiting for opponent…</em>';
-    // Allow reordering while waiting
-    handCards.querySelectorAll('.card').forEach((el, i) => {
-      el.classList.add('clickable');
-      el.addEventListener('click', () => {
-        if (heldCardIndex === i) {
-          heldCardIndex = null;
-        } else if (heldCardIndex !== null) {
-          [localHand[heldCardIndex], localHand[i]] = [localHand[i], localHand[heldCardIndex]];
-          heldCardIndex = null;
-        } else {
-          heldCardIndex = i;
-        }
-        renderPeggingHand(serverHand, count, isMyTurn);
-      });
-    });
   }
 }
 
