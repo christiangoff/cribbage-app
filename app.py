@@ -1199,23 +1199,29 @@ def _check_win(lg: LiveGame) -> bool:
 
 
 def _advance_counting(lg: LiveGame) -> None:
-    """Score the current counting subphase and advance. Calls _check_win."""
+    """Score the current counting subphase in correct cribbage order:
+    non-dealer hand → dealer hand → dealer crib."""
     state = lg.get_state()
-    subphase = state.get("counting_subphase", "p2_hand")
+    subphase = state.get("counting_subphase", "non_dealer")
+
+    dealer_id = lg.dealer_id
+    non_dealer_id = lg.player2_id if dealer_id == lg.player1_id else lg.player1_id
+    dealer_role = "p1" if dealer_id == lg.player1_id else "p2"
+    non_dealer_role = "p2" if dealer_id == lg.player1_id else "p1"
 
     peg = state.get("pegging") or {}
 
-    if subphase == "p2_hand":
-        hand = peg.get("p2_played", state.get("p2_hand", []))
-        pid = lg.player2_id
-        next_sub = "p1_hand"
-    elif subphase == "p1_hand":
-        hand = peg.get("p1_played", state.get("p1_hand", []))
-        pid = lg.player1_id
+    if subphase == "non_dealer":
+        pid = non_dealer_id
+        hand = peg.get(f"{non_dealer_role}_played", state.get(f"{non_dealer_role}_hand", []))
+        next_sub = "dealer"
+    elif subphase == "dealer":
+        pid = dealer_id
+        hand = peg.get(f"{dealer_role}_played", state.get(f"{dealer_role}_hand", []))
         next_sub = "crib"
     else:  # crib
+        pid = dealer_id
         hand = state["crib"]
-        pid = lg.dealer_id
         next_sub = None
 
     starter = state["starter"]
@@ -1235,7 +1241,6 @@ def _advance_counting(lg: LiveGame) -> None:
         return
 
     if next_sub is None:
-        # Done counting — start next hand or end
         _start_next_hand(lg, state)
     else:
         state["counting_subphase"] = next_sub
@@ -1604,7 +1609,7 @@ def play_peg(game_id: int):
             db.session.commit()
             return jsonify({"ok": True, "phase": lg.phase})
         # Move to counting — play_count handles all subphases when both confirm
-        state["counting_subphase"] = "p2_hand"
+        state["counting_subphase"] = "non_dealer"
         lg.set_state(state)
         lg.phase = "counting"
         db.session.commit()

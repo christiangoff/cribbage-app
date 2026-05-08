@@ -374,20 +374,15 @@ function render(data) {
     const cs = data.counting_scores || {};
     const starter = data.starter;
     const p1IsDealer = data.dealer_id === data.player1_id;
+    const nonDealerName = p1IsDealer ? data.player2_name : data.player1_name;
+    const dealerName   = p1IsDealer ? data.player1_name : data.player2_name;
+    const nonDealerCs  = p1IsDealer ? cs.p2 : cs.p1;
+    const dealerCs     = p1IsDealer ? cs.p1 : cs.p2;
 
     const rows = [
-      {
-        label: data.player2_name + (p1IsDealer ? ' (non-dealer)' : ' (dealer)'),
-        data: cs.p2
-      },
-      {
-        label: data.player1_name + (p1IsDealer ? ' (dealer)' : ' (non-dealer)'),
-        data: cs.p1
-      },
-      {
-        label: `Crib (${data.dealer_name})`,
-        data: cs.crib
-      },
+      { label: `${nonDealerName} (non-dealer)`, data: nonDealerCs },
+      { label: `${dealerName} (dealer)`,        data: dealerCs },
+      { label: `Crib (${data.dealer_name})`,    data: cs.crib },
     ];
 
     const starterHtml = starter ? `<span style="font-size:0.85rem;color:#555">Cut: ${cardHtml(starter,false,false)}</span>` : '';
