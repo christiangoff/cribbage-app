@@ -138,6 +138,7 @@
       <tr>
         <th>Date</th>
         <th>Winner</th>
+        <th>Loser</th>
         <th>Score</th>
         <th>Action</th>
       </tr>
@@ -147,6 +148,7 @@
       <tr>
         <td>{{ game.played_on }}</td>
         <td>{{ game.winner.name if game.winner else "N/A" }}</td>
+        <td>{{ game.loser.name if game.loser else "N/A" }}</td>
         <td>{{ game.winner_score }} - {{ game.loser_score }}</td>
         <td>
           <form method="post" action="{{ url_for('admin_delete_game', game_id=game.id) }}" onsubmit="return confirm('Delete game #{{ game.id }}?');">
@@ -155,7 +157,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No games found.</td></tr>
+      <tr><td colspan="5">No games found.</td></tr>
       {% endfor %}
     </tbody>
   </table>

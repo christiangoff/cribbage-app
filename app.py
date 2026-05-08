@@ -251,6 +251,14 @@ class Game(db.Model):
         return min(self.player1_score, self.player2_score)
 
     @property
+    def loser(self):
+        if self.winner_id == self.player1_id:
+            return self.player2
+        if self.winner_id == self.player2_id:
+            return self.player1
+        return None
+
+    @property
     def point_diff(self) -> int:
         return self.winner_score - self.loser_score
 
