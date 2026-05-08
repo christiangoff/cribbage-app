@@ -7,7 +7,7 @@
   {% if is_double_skunk %}
     <span class="recap-badge recap-badge--double-skunk">💀 Double Skunk</span>
   {% elif is_skunk %}
-    <span class="recap-badge recap-badge--skunk">�skunk Skunk</span>
+    <span class="recap-badge recap-badge--skunk">🦛 Skunk</span>
   {% endif %}
 </div>
 
@@ -49,18 +49,83 @@
       <span class="recap-fact-value">{{ duration }}</span>
     </div>
     {% endif %}
+    {% if game_stats.get('hands_played') %}
+    <div class="recap-fact">
+      <span class="recap-fact-label">Hands Played</span>
+      <span class="recap-fact-value">{{ game_stats.hands_played }}</span>
+    </div>
+    {% endif %}
   </div>
 </div>
 
-{% if events %}
+{% if game_stats %}
 <div class="panel">
-  <h3>Game Events</h3>
-  <ol class="recap-events">
-    {% for event in events | reverse %}
-    <li>{{ event }}</li>
-    {% endfor %}
-  </ol>
-  <p class="recap-events-note">Showing the final {{ events | length }} events of the game.</p>
+  <h3>Game Highlights</h3>
+  <div class="recap-highlights">
+
+    {% if game_stats.get('high_hand') %}
+    {% set hh = game_stats.high_hand %}
+    <div class="recap-highlight-card">
+      <div class="recap-highlight-icon">🃏</div>
+      <div class="recap-highlight-body">
+        <div class="recap-highlight-label">Best Hand</div>
+        <div class="recap-highlight-value">{{ hh.pts }} pts</div>
+        <div class="recap-highlight-detail">
+          {{ hh.player_name }}{% if hh.reasons %} · {{ hh.reasons | join(', ') }}{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if game_stats.get('high_peg_play') %}
+    {% set hp = game_stats.high_peg_play %}
+    <div class="recap-highlight-card">
+      <div class="recap-highlight-icon">⚡</div>
+      <div class="recap-highlight-body">
+        <div class="recap-highlight-label">Best Peg Play</div>
+        <div class="recap-highlight-value">{{ hp.pts }} pts</div>
+        <div class="recap-highlight-detail">
+          {{ hp.player_name }}{% if hp.reasons %} · {{ hp.reasons | join(', ') }}{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if game_stats.get('largest_lead') %}
+    {% set ll = game_stats.largest_lead %}
+    <div class="recap-highlight-card">
+      <div class="recap-highlight-icon">📈</div>
+      <div class="recap-highlight-body">
+        <div class="recap-highlight-label">Largest Lead</div>
+        <div class="recap-highlight-value">{{ ll.pts }} pts</div>
+        <div class="recap-highlight-detail">{{ ll.player_name }}</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if game_stats.get('lead_changes') is not none and game_stats.lead_changes > 0 %}
+    <div class="recap-highlight-card">
+      <div class="recap-highlight-icon">🔄</div>
+      <div class="recap-highlight-body">
+        <div class="recap-highlight-label">Lead Changes</div>
+        <div class="recap-highlight-value">{{ game_stats.lead_changes }}</div>
+        <div class="recap-highlight-detail">Back and forth{% if game_stats.lead_changes >= 5 %} — what a match!{% endif %}</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if game_stats.get('first_to_61') %}
+    <div class="recap-highlight-card">
+      <div class="recap-highlight-icon">🏁</div>
+      <div class="recap-highlight-body">
+        <div class="recap-highlight-label">First to Halfway</div>
+        <div class="recap-highlight-value">61</div>
+        <div class="recap-highlight-detail">{{ game_stats.first_to_61 }} hit the halfway mark first</div>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
 </div>
 {% endif %}
 

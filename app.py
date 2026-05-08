@@ -1236,6 +1236,14 @@ def _advance_counting(lg: LiveGame) -> None:
     events = events[-10:]
     state["events"] = events
 
+    # Track high hand and score-based stats
+    if pts > 0:
+        stats = state.setdefault("game_stats", _init_game_stats())
+        cur_high = stats.get("high_hand")
+        if cur_high is None or pts > cur_high["pts"]:
+            stats["high_hand"] = {"player_name": pname, "pts": pts, "reasons": list(reasons)}
+    _check_score_stats(lg, state)
+
     if _check_win(lg):
         lg.set_state(state)
         return
@@ -1250,7 +1258,6 @@ def _advance_counting(lg: LiveGame) -> None:
 
 def _start_next_hand(lg: LiveGame, state: dict) -> None:
     """Rotate dealer and deal new hand."""
-    # Rotate dealer
     if lg.dealer_id == lg.player1_id:
         lg.dealer_id = lg.player2_id
     else:
@@ -1259,6 +1266,8 @@ def _start_next_hand(lg: LiveGame, state: dict) -> None:
     deck = new_deck()
     p1_hand, p2_hand, remaining = deal_hands(deck)
     events = state.get("events", [])
+    game_stats = state.get("game_stats", _init_game_stats())
+    game_stats["hands_played"] = game_stats.get("hands_played", 0) + 1
     new_state = {
         "p1_hand": p1_hand,
         "p2_hand": p2_hand,
@@ -1270,9 +1279,47 @@ def _start_next_hand(lg: LiveGame, state: dict) -> None:
         "pegging": None,
         "counting_subphase": None,
         "events": events,
+        "game_stats": game_stats,
     }
     lg.set_state(new_state)
     lg.phase = "discarding"
+
+
+def _init_game_stats() -> dict:
+    return {
+        "high_hand": None,       # {"player_name": str, "pts": int, "reasons": [str]}
+        "high_peg_play": None,   # {"player_name": str, "pts": int, "reasons": [str]}
+        "lead_changes": 0,
+        "largest_lead": None,    # {"player_name": str, "pts": int}
+        "first_to_61": None,     # player name string
+        "hands_played": 0,
+        "_prev_leader_id": None,
+    }
+
+
+def _check_score_stats(lg: LiveGame, state: dict) -> None:
+    """Update running game_stats in state after any score change."""
+    stats = state.setdefault("game_stats", _init_game_stats())
+    p1, p2 = lg.player1_score, lg.player2_score
+
+    if stats.get("first_to_61") is None:
+        if p1 >= 61:
+            stats["first_to_61"] = lg.player1.name
+        elif p2 >= 61:
+            stats["first_to_61"] = lg.player2.name
+
+    if p1 != p2:
+        new_leader_id = lg.player1_id if p1 > p2 else lg.player2_id
+        prev = stats.get("_prev_leader_id")
+        if prev is not None and prev != new_leader_id:
+            stats["lead_changes"] = stats.get("lead_changes", 0) + 1
+        stats["_prev_leader_id"] = new_leader_id
+
+    gap = abs(p1 - p2)
+    cur = stats.get("largest_lead")
+    if gap > 0 and (cur is None or gap > cur["pts"]):
+        leader_name = lg.player1.name if p1 > p2 else lg.player2.name
+        stats["largest_lead"] = {"player_name": leader_name, "pts": gap}
 
 
 # ── Live game routes ──────────────────────────────────────────────────────────
@@ -1380,6 +1427,7 @@ def play_accept(game_id: int):
         "pegging": None,
         "counting_subphase": None,
         "events": ["Challenge accepted! Discard 2 cards to the crib."],
+        "game_stats": _init_game_stats(),
     }
     lg.set_state(state)
     lg.phase = "discarding"
@@ -1442,6 +1490,7 @@ def play_join(game_id: int):
         "pegging": None,
         "counting_subphase": None,
         "events": ["Game started! Discard 2 cards to the crib."],
+        "game_stats": _init_game_stats(),
     }
     lg.set_state(state)
     lg.phase = "discarding"
@@ -1471,7 +1520,7 @@ def play_recap(game_id: int):
     is_double_skunk = loser_score <= DOUBLE_SKUNK_THRESHOLD
     is_skunk = not is_double_skunk and loser_score <= SKUNK_THRESHOLD
     first_dealer = Player.query.get(lg.first_dealer_id) if lg.first_dealer_id else None
-    events = state.get("events", [])
+    game_stats = state.get("game_stats") or {}
 
     duration = None
     if lg.completed_at and lg.created_at:
@@ -1491,7 +1540,7 @@ def play_recap(game_id: int):
         is_skunk=is_skunk,
         is_double_skunk=is_double_skunk,
         first_dealer=first_dealer,
-        events=events,
+        game_stats=game_stats,
         duration=duration,
     )
 
@@ -1646,6 +1695,8 @@ def play_cut(game_id: int):
         lg.add_score(lg.dealer_id, 2)
         pts = 2
         events.append(f"His heels! {card_display(starter)} — dealer gets 2 pts")
+        state["events"] = events
+        _check_score_stats(lg, state)
         if _check_win(lg):
             lg.set_state(state)
             db.session.commit()
@@ -1710,6 +1761,12 @@ def play_peg(game_id: int):
 
     if pts:
         lg.add_score(me_id, pts)
+        # Track high pegging play
+        stats = state.setdefault("game_stats", _init_game_stats())
+        cur_high = stats.get("high_peg_play")
+        if cur_high is None or pts > cur_high["pts"]:
+            stats["high_peg_play"] = {"player_name": pname, "pts": pts, "reasons": list(reasons)}
+        _check_score_stats(lg, state)
         if _check_win(lg):
             state["events"] = events[-10:]
             lg.set_state(state)
@@ -1739,6 +1796,7 @@ def play_peg(game_id: int):
         lg.add_score(me_id, 1)
         events.append(f"{pname} gets last card (+1)")
         state["events"] = events[-10:]
+        _check_score_stats(lg, state)
         lg.set_state(state)
         if _check_win(lg):
             db.session.commit()
@@ -1769,6 +1827,8 @@ def play_peg(game_id: int):
             peg["p1_go"] = False
             peg["p2_go"] = False
             peg["turn_player_id"] = opp_id
+            state["events"] = events[-10:]
+            _check_score_stats(lg, state)
         # else keep turn with current player
 
     state["events"] = events[-10:]
@@ -1829,6 +1889,8 @@ def play_go(game_id: int):
         peg["p1_go"] = False
         peg["p2_go"] = False
         peg["turn_player_id"] = opp_id
+        state["events"] = events[-10:]
+        _check_score_stats(lg, state)
     else:
         # Switch turn to opponent
         peg["turn_player_id"] = opp_id

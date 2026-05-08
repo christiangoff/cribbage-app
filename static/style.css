@@ -1159,25 +1159,54 @@ tr.row-unranked td { color: #cbd5e1; }
   color: var(--ink);
 }
 
-.recap-events {
-  margin: 0;
-  padding-left: 1.25rem;
-  font-size: 0.9rem;
-  line-height: 1.8;
+.recap-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.recap-highlight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: var(--accent-light);
+  border: 1px solid #99f6e4;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+}
+
+.recap-highlight-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.recap-highlight-body {
+  min-width: 0;
+}
+
+.recap-highlight-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-dark);
+  margin-bottom: 0.15rem;
+}
+
+.recap-highlight-value {
+  font-size: 1.4rem;
+  font-weight: 700;
   color: var(--ink);
+  line-height: 1.1;
 }
 
-.recap-events li {
-  border-bottom: 1px solid var(--line);
-  padding: 0.2rem 0;
-}
-
-.recap-events li:last-child { border: none; }
-
-.recap-events-note {
-  font-size: 0.78rem;
-  color: #94a3b8;
-  margin: 0.5rem 0 0;
+.recap-highlight-detail {
+  font-size: 0.8rem;
+  color: #475569;
+  margin-top: 0.2rem;
+  word-break: break-word;
 }
 
 .recap-links {
