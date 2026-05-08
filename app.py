@@ -1283,13 +1283,25 @@ def play_lobby():
     me_id = _live_player_id()
     open_games = LiveGame.query.filter_by(player2_id=None, phase="lobby").order_by(LiveGame.created_at.desc()).all()
     my_games = []
+    incoming_challenges = []
+    sent_challenges = []
     if me_id:
         my_games = LiveGame.query.filter(
-            ((LiveGame.player1_id == me_id) | (LiveGame.player2_id == me_id)),
-            LiveGame.phase != "complete",
+            (LiveGame.player1_id == me_id) | (LiveGame.player2_id == me_id),
+            LiveGame.phase.notin_(["complete", "challenged"]),
         ).order_by(LiveGame.created_at.desc()).all()
+        incoming_challenges = LiveGame.query.filter_by(
+            player2_id=me_id, phase="challenged"
+        ).order_by(LiveGame.created_at.desc()).all()
+        sent_challenges = LiveGame.query.filter_by(
+            player1_id=me_id, phase="challenged"
+        ).order_by(LiveGame.created_at.desc()).all()
+    opponents = [p for p in all_players if p.id != me_id] if me_id else []
     return render_template("play_lobby.html", players=all_players, me_id=me_id,
-                           open_games=open_games, my_games=my_games)
+                           open_games=open_games, my_games=my_games,
+                           incoming_challenges=incoming_challenges,
+                           sent_challenges=sent_challenges,
+                           opponents=opponents)
 
 
 @app.route("/play/set-identity", methods=["POST"])
@@ -1311,6 +1323,84 @@ def play_new():
     db.session.add(lg)
     db.session.commit()
     return redirect(url_for("play_game", game_id=lg.id))
+
+
+@app.route("/play/challenge", methods=["POST"])
+@login_required
+def play_challenge():
+    me_id = _live_player_id()
+    if not me_id:
+        flash("Set your identity first.", "error")
+        return redirect(url_for("play_lobby"))
+    opponent_id = request.form.get("opponent_id", type=int)
+    if not opponent_id or opponent_id == me_id:
+        flash("Choose a valid opponent.", "error")
+        return redirect(url_for("play_lobby"))
+    if not Player.query.get(opponent_id):
+        flash("Player not found.", "error")
+        return redirect(url_for("play_lobby"))
+    lg = LiveGame(player1_id=me_id, player2_id=opponent_id, phase="challenged")
+    db.session.add(lg)
+    db.session.commit()
+    opp = Player.query.get(opponent_id)
+    flash(f"Challenge sent to {opp.name}!", "success")
+    return redirect(url_for("play_lobby"))
+
+
+@app.route("/play/<int:game_id>/accept", methods=["POST"])
+@login_required
+def play_accept(game_id: int):
+    me_id = _live_player_id()
+    if not me_id:
+        flash("Set your identity first.", "error")
+        return redirect(url_for("play_lobby"))
+    lg = LiveGame.query.get_or_404(game_id)
+    if lg.phase != "challenged" or lg.player2_id != me_id:
+        flash("This challenge is no longer valid.", "error")
+        return redirect(url_for("play_lobby"))
+
+    lg.dealer_id = random.choice([lg.player1_id, lg.player2_id])
+    lg.first_dealer_id = lg.dealer_id
+    deck = new_deck()
+    p1_hand, p2_hand, remaining = deal_hands(deck)
+    state = {
+        "p1_hand": p1_hand,
+        "p2_hand": p2_hand,
+        "crib": [],
+        "starter": None,
+        "p1_discarded": False,
+        "p2_discarded": False,
+        "deck": remaining,
+        "pegging": None,
+        "counting_subphase": None,
+        "events": ["Challenge accepted! Discard 2 cards to the crib."],
+    }
+    lg.set_state(state)
+    lg.phase = "discarding"
+    db.session.commit()
+    return redirect(url_for("play_game", game_id=lg.id))
+
+
+@app.route("/play/<int:game_id>/decline", methods=["POST"])
+@login_required
+def play_decline(game_id: int):
+    me_id = _live_player_id()
+    lg = LiveGame.query.get_or_404(game_id)
+    if lg.phase != "challenged":
+        flash("This game is already active.", "error")
+        return redirect(url_for("play_lobby"))
+    if me_id not in (lg.player1_id, lg.player2_id):
+        flash("Not your game.", "error")
+        return redirect(url_for("play_lobby"))
+    challenger = Player.query.get(lg.player1_id)
+    challenged = Player.query.get(lg.player2_id)
+    db.session.delete(lg)
+    db.session.commit()
+    if me_id == lg.player2_id:
+        flash(f"Challenge from {challenger.name} declined.", "success")
+    else:
+        flash(f"Challenge to {challenged.name} cancelled.", "success")
+    return redirect(url_for("play_lobby"))
 
 
 @app.route("/play/<int:game_id>/join", methods=["POST"])

@@ -6,56 +6,130 @@
 <div class="panel">
   <p>You must be <a href="{{ url_for('login') }}">logged in</a> to play live games.</p>
 </div>
+
 {% elif not me_id %}
 <div class="panel">
-  <p>Your account isn't linked to a player yet. Ask an admin to link your account to a player before you can play.</p>
+  <p>Your account isn't linked to a player yet. Ask an admin to link your account before you can play.</p>
 </div>
+
 {% else %}
 
+{% set me_player = namespace(name='') %}
+{% for p in players %}{% if p.id == me_id %}{% set me_player.name = p.name %}{% endif %}{% endfor %}
+
+<!-- ── Incoming challenges (shown prominently at top) ── -->
+{% if incoming_challenges %}
+<div class="panel challenge-panel">
+  <h3>⚔️ You've been challenged!</h3>
+  {% for g in incoming_challenges %}
+  <div class="challenge-item">
+    <div class="challenge-from">
+      <strong>{{ g.player1.name }}</strong> wants to play
+      <span class="challenge-time">{{ g.created_at.strftime('%b %d, %I:%M %p') }}</span>
+    </div>
+    <div class="challenge-actions">
+      <form method="post" action="{{ url_for('play_accept', game_id=g.id) }}" style="display:inline">
+        <button type="submit" class="btn-accept">Accept</button>
+      </form>
+      <form method="post" action="{{ url_for('play_decline', game_id=g.id) }}" style="display:inline">
+        <button type="submit" class="danger">Decline</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ── Playing as ── -->
 <div class="panel">
-  <h3>Playing as</h3>
-  {% for p in players %}{% if p.id == me_id %}
-    <p><strong>{{ p.name }}</strong></p>
-  {% endif %}{% endfor %}
+  <span class="playing-as-label">Playing as</span>
+  <strong class="playing-as-name">{{ me_player.name }}</strong>
 </div>
 
+<!-- ── New game ── -->
 <div class="panel">
-  <h3>Start a New Game</h3>
-  <form method="post" action="{{ url_for('play_new') }}">
-    <button type="submit">Create Game &amp; Wait for Opponent</button>
-  </form>
+  <h3>New Game</h3>
+  <div class="new-game-options">
+
+    <div class="new-game-option">
+      <div class="new-game-option-label">Open game</div>
+      <div class="new-game-option-desc">Anyone can join from the lobby</div>
+      <form method="post" action="{{ url_for('play_new') }}">
+        <button type="submit">Create Open Game</button>
+      </form>
+    </div>
+
+    {% if opponents %}
+    <div class="new-game-option">
+      <div class="new-game-option-label">Challenge a player</div>
+      <div class="new-game-option-desc">Send a direct challenge — they'll see it in their lobby</div>
+      <form method="post" action="{{ url_for('play_challenge') }}" class="inline-form">
+        <select name="opponent_id" style="flex:1;min-width:130px">
+          {% for p in opponents %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">⚔️ Challenge</button>
+      </form>
+    </div>
+    {% endif %}
+
+  </div>
 </div>
 
+<!-- ── Sent / pending challenges ── -->
+{% if sent_challenges %}
+<div class="panel">
+  <h3>Pending Challenges</h3>
+  {% for g in sent_challenges %}
+  <div class="sent-challenge-item">
+    <span>Waiting for <strong>{{ g.player2.name }}</strong> to respond…</span>
+    <form method="post" action="{{ url_for('play_decline', game_id=g.id) }}" style="display:inline">
+      <button type="submit" class="danger btn-sm">Cancel</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ── Active games ── -->
 {% if my_games %}
 <div class="panel">
   <h3>Your Active Games</h3>
+  <div class="table-wrap">
   <table>
-    <thead><tr><th>Game</th><th>Players</th><th>Phase</th><th></th></tr></thead>
+    <thead><tr><th>Game</th><th>Opponent</th><th>Phase</th><th></th></tr></thead>
     <tbody>
       {% for g in my_games %}
       <tr>
         <td>#{{ g.id }}</td>
         <td>
-          {{ g.player1.name }} vs
-          {% if g.player2 %}{{ g.player2.name }}{% else %}<em>waiting…</em>{% endif %}
+          {% if g.player1_id == me_id %}
+            {{ g.player2.name if g.player2 else '—' }}
+          {% else %}
+            {{ g.player1.name }}
+          {% endif %}
         </td>
         <td>{{ g.phase }}</td>
         <td>
-          <a href="{{ url_for('play_game', game_id=g.id) }}">Resume</a>
+          <a href="{{ url_for('play_game', game_id=g.id) }}">Resume →</a>
           <form method="post" action="{{ url_for('play_delete', game_id=g.id) }}" style="display:inline" onsubmit="return confirm('Delete this game?')">
-            <button type="submit" class="danger" style="margin-left:0.5rem;font-size:0.85rem;padding:0.2rem 0.5rem">Delete</button>
+            <button type="submit" class="danger btn-sm" style="margin-left:0.5rem">Delete</button>
           </form>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 
+<!-- ── Open games ── -->
 {% if open_games %}
 <div class="panel">
-  <h3>Open Games (Waiting for Opponent)</h3>
+  <h3>Open Games</h3>
+  <div class="table-wrap">
   <table>
     <thead><tr><th>Game</th><th>Created by</th><th></th></tr></thead>
     <tbody>
@@ -74,6 +148,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 
