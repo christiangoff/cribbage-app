@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="recap-header panel">
+  <div class="recap-meta">Game #{{ lg.id }} &nbsp;·&nbsp; {{ lg.completed_at.strftime('%b %d, %Y') if lg.completed_at }}{% if duration %} &nbsp;·&nbsp; {{ duration }}{% endif %}</div>
+  <h2 class="recap-title">{{ winner.name }} defeated {{ loser.name }}</h2>
+  {% if is_double_skunk %}
+    <span class="recap-badge recap-badge--double-skunk">💀 Double Skunk</span>
+  {% elif is_skunk %}
+    <span class="recap-badge recap-badge--skunk">�skunk Skunk</span>
+  {% endif %}
+</div>
+
+<div class="recap-scores-row">
+  <div class="recap-score-card recap-score-card--winner">
+    <div class="recap-score-label">{{ winner.name }}</div>
+    <div class="recap-score-num">{{ winner_score }}</div>
+    <div class="recap-score-tag">Winner 🏆</div>
+  </div>
+  <div class="recap-vs">vs</div>
+  <div class="recap-score-card">
+    <div class="recap-score-label">{{ loser.name }}</div>
+    <div class="recap-score-num">{{ loser_score }}</div>
+    {% if is_double_skunk %}
+      <div class="recap-score-tag recap-score-tag--bad">Double Skunked</div>
+    {% elif is_skunk %}
+      <div class="recap-score-tag recap-score-tag--bad">Skunked</div>
+    {% else %}
+      <div class="recap-score-tag">Loser</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel recap-details">
+  <div class="recap-fact-row">
+    <div class="recap-fact">
+      <span class="recap-fact-label">Margin</span>
+      <span class="recap-fact-value">{{ winner_score - loser_score }} pts</span>
+    </div>
+    {% if first_dealer %}
+    <div class="recap-fact">
+      <span class="recap-fact-label">First Dealer</span>
+      <span class="recap-fact-value">{{ first_dealer.name }}</span>
+    </div>
+    {% endif %}
+    {% if duration %}
+    <div class="recap-fact">
+      <span class="recap-fact-label">Duration</span>
+      <span class="recap-fact-value">{{ duration }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if events %}
+<div class="panel">
+  <h3>Game Events</h3>
+  <ol class="recap-events">
+    {% for event in events | reverse %}
+    <li>{{ event }}</li>
+    {% endfor %}
+  </ol>
+  <p class="recap-events-note">Showing the final {{ events | length }} events of the game.</p>
+</div>
+{% endif %}
+
+<div class="panel recap-links">
+  <a href="{{ url_for('player_profile', player_id=winner.id) }}" class="player-link">{{ winner.name }}'s profile →</a>
+  &nbsp;&nbsp;
+  <a href="{{ url_for('player_profile', player_id=loser.id) }}" class="player-link">{{ loser.name }}'s profile →</a>
+  &nbsp;&nbsp;
+  <a href="{{ url_for('play_lobby') }}">← Back to lobby</a>
+</div>
+
+{% endblock %}

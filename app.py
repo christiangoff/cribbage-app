@@ -1285,6 +1285,7 @@ def play_lobby():
     my_games = []
     incoming_challenges = []
     sent_challenges = []
+    completed_games = []
     if me_id:
         my_games = LiveGame.query.filter(
             (LiveGame.player1_id == me_id) | (LiveGame.player2_id == me_id),
@@ -1296,11 +1297,16 @@ def play_lobby():
         sent_challenges = LiveGame.query.filter_by(
             player1_id=me_id, phase="challenged"
         ).order_by(LiveGame.created_at.desc()).all()
+        completed_games = LiveGame.query.filter(
+            (LiveGame.player1_id == me_id) | (LiveGame.player2_id == me_id),
+            LiveGame.phase == "complete",
+        ).order_by(LiveGame.completed_at.desc()).limit(8).all()
     opponents = [p for p in all_players if p.id != me_id] if me_id else []
     return render_template("play_lobby.html", players=all_players, me_id=me_id,
                            open_games=open_games, my_games=my_games,
                            incoming_challenges=incoming_challenges,
                            sent_challenges=sent_challenges,
+                           completed_games=completed_games,
                            opponents=opponents)
 
 
@@ -1449,6 +1455,45 @@ def play_game(game_id: int):
     me_id = _live_player_id()
     all_players = Player.query.order_by(Player.name.asc()).all()
     return render_template("play_game.html", game=lg, me_id=me_id, players=all_players)
+
+
+@app.route("/play/<int:game_id>/recap")
+def play_recap(game_id: int):
+    lg = LiveGame.query.get_or_404(game_id)
+    if lg.phase != "complete":
+        return redirect(url_for("play_game", game_id=game_id))
+
+    state = lg.get_state()
+    winner = lg.winner
+    loser = lg.player2 if lg.winner_id == lg.player1_id else lg.player1
+    winner_score = lg.player1_score if lg.winner_id == lg.player1_id else lg.player2_score
+    loser_score  = lg.player2_score if lg.winner_id == lg.player1_id else lg.player1_score
+    is_double_skunk = loser_score <= DOUBLE_SKUNK_THRESHOLD
+    is_skunk = not is_double_skunk and loser_score <= SKUNK_THRESHOLD
+    first_dealer = Player.query.get(lg.first_dealer_id) if lg.first_dealer_id else None
+    events = state.get("events", [])
+
+    duration = None
+    if lg.completed_at and lg.created_at:
+        secs = int((lg.completed_at - lg.created_at).total_seconds())
+        if secs < 3600:
+            duration = f"{secs // 60}m {secs % 60}s"
+        else:
+            duration = f"{secs // 3600}h {(secs % 3600) // 60}m"
+
+    return render_template(
+        "play_recap.html",
+        lg=lg,
+        winner=winner,
+        loser=loser,
+        winner_score=winner_score,
+        loser_score=loser_score,
+        is_skunk=is_skunk,
+        is_double_skunk=is_double_skunk,
+        first_dealer=first_dealer,
+        events=events,
+        duration=duration,
+    )
 
 
 def _counting_scores_for_display(lg: "LiveGame", state: dict) -> dict:

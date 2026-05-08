@@ -298,6 +298,7 @@ function render(data) {
   if (phase === 'complete') {
     const wName = data.player1_score >= 121 ? data.player1_name : data.player2_name;
     statusMsg.innerHTML = `<strong>Game over! ${wName} wins!</strong>`;
+    statusActions.innerHTML = `<a href="/play/${GAME_ID}/recap" style="display:inline-block;margin-top:0.5rem"><button type="button">View Game Recap →</button></a>`;
     polling = false;
     return;
   }
