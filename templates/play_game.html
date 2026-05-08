@@ -109,7 +109,8 @@ let drag = null;
 
 document.addEventListener('pointermove', e => {
   if (!drag) return;
-  if (!drag.started && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) {
+  const dragThreshold = drag.pointerType === 'touch' ? 18 : 8;
+  if (!drag.started && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > dragThreshold) {
     drag.started = true;
     const r = drag.card.getBoundingClientRect();
     drag.ghost = drag.card.cloneNode(true);
@@ -177,7 +178,8 @@ function enableDrag(container, onReorder) {
     if (fromIdx < 0) return;
     const r = card.getBoundingClientRect();
     drag = { card, fromIdx, container, sx:e.clientX, sy:e.clientY,
-              ox:e.clientX-r.left, oy:e.clientY-r.top, started:false, ghost:null };
+              ox:e.clientX-r.left, oy:e.clientY-r.top, started:false, ghost:null,
+              pointerType: e.pointerType };
   };
   container.addEventListener('pointerdown', container._dragHandler);
 }
@@ -191,14 +193,15 @@ function rankVal(card) {
 
 function cardHtml(card, clickable, selected) {
   const r = card.slice(0,-1), s = card.slice(-1);
+  const d = r === 'T' ? '10' : r;
   const red = s==='H'||s==='D';
   const cls = ['card', red?'red':'black',
     selected?'selected':'', clickable?'clickable':'']
     .filter(Boolean).join(' ');
   return `<span class="${cls}" data-card="${card}">
-    <span class="card-corner card-tl">${r}<br>${SUIT_SYM[s]}</span>
+    <span class="card-corner card-tl">${d}<br>${SUIT_SYM[s]}</span>
     <span class="card-center">${SUIT_SYM[s]}</span>
-    <span class="card-corner card-br">${r}<br>${SUIT_SYM[s]}</span>
+    <span class="card-corner card-br">${d}<br>${SUIT_SYM[s]}</span>
   </span>`;
 }
 

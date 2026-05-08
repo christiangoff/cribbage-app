@@ -576,12 +576,17 @@ tr.row-unranked td { color: #cbd5e1; }
   box-shadow: 0 6px 14px rgba(13,148,136,0.3);
 }
 
-.card.clickable { cursor: pointer; }
+.card.clickable {
+  cursor: pointer;
+  touch-action: manipulation;
+}
 
-.card.clickable:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0,0,0,0.12);
-  background: var(--accent-light);
+@media (hover: hover) {
+  .card.clickable:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0,0,0,0.12);
+    background: var(--accent-light);
+  }
 }
 
 .card.card-dragging { opacity: 0.3; }
